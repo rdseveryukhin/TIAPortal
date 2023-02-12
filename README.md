@@ -1,7 +1,5 @@
 # TIAPortal
-SCL
-
-It's a program for paint cell. Project created in TIA Portal for PLC S7-1200. You can see instruction description below.
+It's a program for paint chamber with SCL. Project created in TIA Portal for PLC S7-1200. You can see instruction description below.
 
 Equipment list:
 M1-2 - Air handling unit motors
