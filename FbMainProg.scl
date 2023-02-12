@@ -1,0 +1,3506 @@
+﻿TYPE "typeC03_Limits"
+VERSION : 0.1
+   STRUCT
+      setpoints : Array[1..4] of Real;
+      delays : Array[1..4] of UInt;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeRange"
+VERSION : 0.1
+   STRUCT
+      minimum : Real;
+      maximum : Real;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeEvents"
+VERSION : 0.1
+   STRUCT
+      errors { ExternalWritable := 'False'} : Word;
+      warnings { ExternalWritable := 'False'} : Word;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC03_Other"
+VERSION : 0.1
+   STRUCT
+      simulationValue : Real;
+      filterGain : Real;
+      histeresys : Real;
+      range { S7_SetPoint := 'False'} : "typeRange";
+      limits { S7_SetPoint := 'False'} : "typeC03_Limits";
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC03_UserInterface"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      value { ExternalWritable := 'False'} : Real;
+      control : DWord;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+      other { S7_SetPoint := 'False'} : "typeC03_Other";
+   END_STRUCT;
+
+END_TYPE
+
+FUNCTION "FcLimit" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      enable : Bool;
+      typeUpperLimit : Bool;
+      delayResult : Bool;
+      value : Real;
+      setpoint : Real;
+      histeresys : Real;
+   END_VAR
+
+   VAR_OUTPUT 
+      delayRelease : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      result : Bool;
+   END_VAR
+
+   VAR_TEMP 
+      tempTypeLowLimit : Bool;
+      tempTypeHighLimit : Bool;
+      tempValue : Real;
+   END_VAR
+
+
+BEGIN
+	#tempTypeLowLimit := NOT #typeUpperLimit;
+	#tempTypeHighLimit :=NOT #tempTypeLowLimit;
+	
+	#delayRelease :=
+	#enable AND  (NOT #delayResult OR NOT #result)
+	AND
+	(#tempTypeLowLimit AND (#value <= #setpoint) XOR #tempTypeHighLimit AND (#value >= #setpoint));
+	
+	IF #enable THEN
+	    IF #tempTypeLowLimit THEN
+	        #tempValue := #histeresys;
+	    ELSE
+	        #tempValue := - #histeresys;
+	    END_IF;
+	    
+	    #tempValue := #setpoint * (real#1.0 + #tempValue);
+	    
+	    IF #delayResult THEN
+	        #result := TRUE;
+	    ELSIF #tempTypeLowLimit AND (#value >= #tempValue) XOR #tempTypeHighLimit AND (#value <= #tempValue) THEN
+	        #result := FALSE;
+	    END_IF;
+	ELSE
+	    #result := FALSE;
+	END_IF;
+	
+END_FUNCTION
+
+FUNCTION_BLOCK "FbC03_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      limit_1_release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_2_release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_3_release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_4_release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      image { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Int;
+   END_VAR
+
+   VAR_OUTPUT 
+      limit_1_result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_2_result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_3_result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      limit_4_result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      error { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      value { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_IN_OUT 
+      userInterface : "typeC03_UserInterface";
+   END_VAR
+
+   VAR RETAIN
+      statSimulation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_1_Enabled { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_2_Enabled { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_3_Enabled { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_4_Enabled { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_1_IsUpper { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_2_IsUpper { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_3_IsUpper { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+      statLimit_4_IsUpper { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+      statLimit_1_IsError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statLimit_2_IsError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_3_IsError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_4_IsError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+   END_VAR
+   VAR 
+      statIsEdited { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_1_Result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_2_Result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_3_Result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statLimit_4_Result { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+   VAR RETAIN
+      statType { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+      statEvents { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+   END_VAR
+   VAR 
+      statValue { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+      statPreviousValue { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+   VAR RETAIN
+      statDefaultValue { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+      statOther { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC03_Other" := (0.0, 0.02, 0.01, ((), 100.0), ([10.0, 20.0, 80.0, 90.0], [4(2000)]));
+   END_VAR
+   VAR 
+      instTimers {InstructionName := 'TON_TIME'; LibVersion := '1.0'; ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : Array[1..4] of TON_TIME;
+   END_VAR
+
+   VAR_TEMP 
+      tempNormalRange : Bool;
+      tempLimit_1_Release : Bool;
+      tempLimit_2_Release : Bool;
+      tempLimit_3_Release : Bool;
+      tempLimit_4_Release : Bool;
+      tempError : Bool;
+      tempWarning : Bool;
+      tempValue : Real;
+   END_VAR
+
+   VAR CONSTANT 
+      TYPE_4_20 : USInt := 0;
+      TYPE_RTD : USInt := 1;
+      OVERFLOW : Word := 16#8000;
+      UNDERFLOW : Word := 16#7FFF;
+      ADC_MAXIMUM : Word := 27648;
+   END_VAR
+
+
+BEGIN
+	REGION inout interface
+	    // simulation
+	    IF #userInterface.control.%X0 THEN
+	        #statSimulation := NOT #statSimulation;
+	        
+	    END_IF;
+	    
+	    // reset error code
+	    IF #userInterface.control.%X1 THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	    
+	    // reset warning code
+	    IF #userInterface.control.%X2 THEN
+	        #statEvents.warnings := w#16#0;
+	    END_IF;
+	    
+	    // limit 1. enable / disable
+	    IF #userInterface.control.%X3 THEN
+	        #statLimit_1_Enabled := NOT #statLimit_1_Enabled;
+	    END_IF;
+	    
+	    // limit 2. enable / disable
+	    IF #userInterface.control.%X4 THEN
+	        #statLimit_2_Enabled := NOT #statLimit_2_Enabled;
+	    END_IF;
+	    
+	    // limit 3. enable / disable
+	    IF #userInterface.control.%X5 THEN
+	        #statLimit_3_Enabled := NOT #statLimit_3_Enabled;
+	    END_IF;
+	    
+	    // limit 4. enable / disable
+	    IF #userInterface.control.%X6 THEN
+	        #statLimit_4_Enabled := NOT #statLimit_4_Enabled;
+	    END_IF;
+	    
+	    // limit 1. is upper / is lower
+	    IF #userInterface.control.%X7 THEN
+	        #statLimit_1_IsUpper := NOT #statLimit_1_IsUpper;
+	    END_IF;
+	    
+	    // limit 2. is upper / is lower
+	    IF #userInterface.control.%X8 THEN
+	        #statLimit_2_IsUpper := NOT #statLimit_2_IsUpper;
+	    END_IF;
+	    
+	    // limit 3. is upper / is lower
+	    IF #userInterface.control.%X9 THEN
+	        #statLimit_3_IsUpper := NOT #statLimit_3_IsUpper;
+	    END_IF;
+	    
+	    // limit 4. is upper / is lower
+	    IF #userInterface.control.%X10 THEN
+	        #statLimit_4_IsUpper := NOT #statLimit_4_IsUpper;
+	    END_IF;
+	    
+	    // range minimum
+	    IF #userInterface.control.%X11 THEN
+	        #statOther.range.minimum := #userInterface.other.range.minimum;
+	    END_IF;
+	    
+	    // range maximum
+	    IF #userInterface.control.%X12 THEN
+	        #statOther.range.maximum := #userInterface.other.range.maximum;
+	    END_IF;
+	    
+	    // limit 1. value
+	    IF #userInterface.control.%X13 THEN
+	        #statOther.limits.setpoints[1] := #userInterface.other.limits.setpoints[1];
+	    END_IF;
+	    
+	    // limit 2. value
+	    IF #userInterface.control.%X14 THEN
+	        #statOther.limits.setpoints[2] := #userInterface.other.limits.setpoints[2];
+	    END_IF;
+	    
+	    // limit 3. value
+	    IF #userInterface.control.%X15 THEN
+	        #statOther.limits.setpoints[3] := #userInterface.other.limits.setpoints[3];
+	    END_IF;
+	    
+	    // limit 4. value
+	    IF #userInterface.control.%X16 THEN
+	        #statOther.limits.setpoints[4] := #userInterface.other.limits.setpoints[4];
+	    END_IF;
+	    
+	    // limit 1. delay
+	    IF #userInterface.control.%X17 THEN
+	        #statOther.limits.delays[1] := #userInterface.other.limits.delays[1];
+	    END_IF;
+	    
+	    // limit 2. delay
+	    IF #userInterface.control.%X18 THEN
+	        #statOther.limits.delays[2] := #userInterface.other.limits.delays[2];
+	    END_IF;
+	    
+	    // limit 3. delay
+	    IF #userInterface.control.%X19 THEN
+	        #statOther.limits.delays[3] := #userInterface.other.limits.delays[3];
+	    END_IF;
+	    
+	    // limit 4. delay
+	    IF #userInterface.control.%X20 THEN
+	        #statOther.limits.delays[4] := #userInterface.other.limits.delays[4];
+	    END_IF;
+	    
+	    // simulation value
+	    IF #userInterface.control.%X21 THEN
+	        #statOther.simulationValue := #userInterface.other.simulationValue;
+	    END_IF;
+	    
+	    // filter gain
+	    IF #userInterface.control.%X22 THEN
+	        #statOther.filterGain := #userInterface.other.filterGain;
+	    END_IF;
+	    
+	    // histeresys
+	    IF #userInterface.control.%X23 THEN
+	        #statOther.histeresys := #userInterface.other.histeresys;
+	    END_IF;
+	    
+	    // edit data
+	    IF #userInterface.control.%X31 THEN
+	        #statIsEdited := NOT #statIsEdited;
+	    END_IF;
+	END_REGION
+	
+	REGION reset error code
+	    IF #resetErrorCode THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	END_REGION
+	
+	REGION logic
+	    #tempNormalRange := ((#image <> #OVERFLOW) AND (#image <> #UNDERFLOW)) OR #statSimulation ; //18052022 Добавлено активация при симуляции
+	    // Значение симуляции всега передается (!не нужно было помещать значение симуляции в разное!)
+	    #statOther.simulationValue := #userInterface.other.simulationValue;
+	    IF #statSimulation THEN
+	        #statValue := #statOther.simulationValue;
+	    ELSE
+	        IF #tempNormalRange THEN
+	            CASE #statType OF
+	                #TYPE_4_20:
+	                    #tempValue := INT_TO_REAL(#image) / #ADC_MAXIMUM * (#statOther.range.maximum - #statOther.range.minimum) + #statOther.range.minimum;
+	                    
+	                #TYPE_RTD:
+	                   
+	                    #tempValue := LIMIT(MN := #statOther.range.minimum,
+	                                        IN := INT_TO_REAL(#image) / real#10.0,
+	                                        MX := #statOther.range.maximum);
+	                   
+	            END_CASE;
+	            
+	            #statValue := #statOther.filterGain * #tempValue + (real#1.0 - #statOther.filterGain) * #statPreviousValue;
+	            
+	        ELSE
+	            #statValue := #statDefaultValue;
+	        END_IF;
+	        
+	        #statPreviousValue := #statValue;
+	    END_IF;
+	END_REGION
+	
+	REGION limits
+	    "FcLimit"(enable := #statLimit_1_Enabled,
+	              typeUpperLimit := #statLimit_1_IsUpper,
+	              value := #statValue,
+	              setpoint := #statOther.limits.setpoints[1],
+	              histeresys := #statOther.histeresys,
+	              delayRelease => #tempLimit_1_Release,
+	              result := #statLimit_1_Result,
+	              delayResult := #instTimers[1].Q);
+	    
+	    "FcLimit"(enable := #statLimit_2_Enabled,
+	              typeUpperLimit := #statLimit_2_IsUpper,
+	              value := #statValue,
+	              setpoint := #statOther.limits.setpoints[2],
+	              histeresys := #statOther.histeresys,
+	              delayRelease => #tempLimit_2_Release,
+	              result := #statLimit_2_Result,
+	              delayResult := #instTimers[2].Q);
+	    
+	    "FcLimit"(enable := #statLimit_3_Enabled,
+	              typeUpperLimit := #statLimit_3_IsUpper,
+	              value := #statValue,
+	              setpoint := #statOther.limits.setpoints[3],
+	              histeresys := #statOther.histeresys,
+	              delayRelease => #tempLimit_3_Release,
+	              result := #statLimit_3_Result,
+	              delayResult := #instTimers[3].Q);
+	    
+	    "FcLimit"(enable := #statLimit_4_Enabled,
+	              typeUpperLimit := #statLimit_4_IsUpper,
+	              value := #statValue,
+	              setpoint := #statOther.limits.setpoints[4],
+	              histeresys := #statOther.histeresys,
+	              delayRelease => #tempLimit_4_Release,
+	              result := #statLimit_4_Result,
+	              delayResult := #instTimers[4].Q);
+	END_REGION
+	
+	REGION timers
+	    #instTimers[1](IN := #tempLimit_1_Release,
+	                   PT := UINT_TO_TIME(#statOther.limits.delays[1]));
+	    
+	    #instTimers[2](IN := #tempLimit_2_Release,
+	                   PT := UINT_TO_TIME(#statOther.limits.delays[2]));
+	    
+	    #instTimers[3](IN := #tempLimit_3_Release,
+	                   PT := UINT_TO_TIME(#statOther.limits.delays[3]));
+	    
+	    #instTimers[4](IN := #tempLimit_4_Release,
+	                   PT := UINT_TO_TIME(#statOther.limits.delays[4]));
+	END_REGION
+	
+	REGION error code after logic
+	    #statEvents.errors.%X0 := NOT #tempNormalRange;
+	    #statEvents.errors.%X1 := #statLimit_1_Result AND #statLimit_1_IsError;
+	    #statEvents.errors.%X2 := #statLimit_2_Result AND #statLimit_2_IsError;
+	    #statEvents.errors.%X3 := #statLimit_3_Result AND #statLimit_3_IsError;
+	    #statEvents.errors.%X4 := #statLimit_4_Result AND #statLimit_4_IsError;
+	END_REGION
+	
+	REGION warning code after logic
+	    #statEvents.warnings.%X0 := #statSimulation;
+	    #statEvents.warnings.%X1 := #statLimit_1_Result AND NOT #statLimit_1_IsError;
+	    #statEvents.warnings.%X2 := #statLimit_2_Result AND NOT #statLimit_2_IsError;
+	    #statEvents.warnings.%X3 := #statLimit_3_Result AND NOT #statLimit_3_IsError;
+	    #statEvents.warnings.%X4 := #statLimit_4_Result AND NOT #statLimit_4_IsError;
+	    #statEvents.warnings.%X15 := #statIsEdited;
+	END_REGION
+	
+	REGION temp
+	    #tempError := #statEvents.errors <> w#16#0;
+	    #tempWarning := #statEvents.warnings <> w#16#0;
+	END_REGION
+	
+	REGION out interface
+	    #limit_1_result := #statLimit_1_Result;
+	    #limit_2_result := #statLimit_2_Result;
+	    #limit_3_result := #statLimit_3_Result;
+	    #limit_4_result := #statLimit_4_Result;
+	    #error := #tempError;
+	    #value := #statValue;
+	END_REGION
+	
+	REGION inout interface
+	    #userInterface.status.%X0 := #statSimulation;
+	    #userInterface.status.%X1 := #statLimit_1_Result;
+	    #userInterface.status.%X2 := #statLimit_2_Result;
+	    #userInterface.status.%X3 := #statLimit_3_Result;
+	    #userInterface.status.%X4 := #statLimit_4_Result;
+	    #userInterface.status.%X15 := #statIsEdited;
+	    
+	    #userInterface.events := #statEvents;
+	    #userInterface.value := #statValue;
+	    #userInterface.control := w#16#0;
+	  //Изменение параметров
+	  
+	    IF NOT #statIsEdited THEN
+	        #userInterface.other.filterGain := #statOther.filterGain;
+	        #userInterface.other.histeresys := #statOther.histeresys;
+	        #userInterface.other.limits := #statOther.limits;
+	        #userInterface.other.range:= #statOther.range;
+	    ELSE
+	        #statOther.filterGain := #userInterface.other.filterGain ;
+	        #statOther.histeresys := #userInterface.other.histeresys ;
+	        #statOther.limits := #userInterface.other.limits;
+	        #statOther.range:= #userInterface.other.range;
+	    END_IF;
+	
+	    
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+TYPE "typeC08_Histeresys"
+VERSION : 0.1
+   STRUCT
+      stages : Struct
+         first : Real;
+         second : Real;
+      END_STRUCT;
+   END_STRUCT;
+
+END_TYPE
+
+FUNCTION_BLOCK "FbC03_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      cycleTime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+   END_VAR
+
+   VAR_IN_OUT 
+      values : Array[*] of Real;
+      userInterfaces : Array[*] of "typeC03_UserInterface";
+   END_VAR
+
+   VAR 
+      instMe_01 { S7_SetPoint := 'False'} : "FbC03_Instance";   // Резерв
+      instMe_02 { S7_SetPoint := 'False'} : "FbC03_Instance";   // Резерв
+      TT7_10 { S7_SetPoint := 'False'} : "FbC03_Instance";   // TT7_10
+      instMe_13 { S7_SetPoint := 'False'} : "FbC03_Instance";   // Резерв
+      instMe_14 { S7_SetPoint := 'False'} : "FbC03_Instance";   // Резерв
+      instMe_19 { S7_SetPoint := 'False'} : "FbC03_Instance";
+      instMe_20 { S7_SetPoint := 'False'} : "FbC03_Instance";
+   END_VAR
+
+
+BEGIN
+	//Датчик температуры в камере
+	#TT7_10(resetErrorCode := "P01_ResetErrorCode",
+	           image := "TT10",
+	           error => "TT10_Error",
+	           value => #values[11],
+	           userInterface := #userInterfaces[11]);
+	
+	
+END_FUNCTION_BLOCK
+
+TYPE "typeC08_UserInterfaceRetain"
+VERSION : 0.1
+   STRUCT
+      setpoint : Real;
+      hysteresys : Struct
+         stage_1 : Real;
+         stage_2 : Real;
+      END_STRUCT;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC08_UserInterface"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      control : Word;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+      histeresys { S7_SetPoint := 'False'} : "typeC08_Histeresys";
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC06_Other"
+VERSION : 0.1
+   STRUCT
+      setpoints : Struct
+         activation : UInt;
+         deactivation : UInt;
+         delayonof : UInt;   // задержка на контроль положения
+      END_STRUCT;
+   END_STRUCT;
+
+END_TYPE
+
+DATA_BLOCK "IdbC03_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC03_Loader"
+
+BEGIN
+   TT7_10.statType := 1;
+
+END_DATA_BLOCK
+
+FUNCTION_BLOCK "FbC08_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      actualValue { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_OUTPUT 
+      resultStage_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      resultStage_2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      error { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      userInterface : "typeC08_UserInterface";
+      userInterfaceRetain : "typeC08_UserInterfaceRetain";
+   END_VAR
+
+   VAR 
+      statResultStage_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statResultStage_2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statState { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+      statMode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+   END_VAR
+
+   VAR_TEMP 
+      tempResult : Bool;
+      tempModeStage_1 : Bool;
+      tempModeStage_2 : Bool;
+      tempModeStage_1_2 : Bool;
+      tempStarted : Bool;
+      tempStartRelease : Bool;
+      tempError : Bool;
+      tempSetpointValue : Real;
+      tempHysteresys : Real;
+   END_VAR
+
+   VAR CONSTANT 
+      STATE_IS_READY : USInt := 0;
+      STATE_STARTED : USInt := 1;
+      MODE_STAGE_1_2 : USInt := 0;
+      MODE_STAGE_1 : USInt := 1;
+      MODE_STAGE_2 : USInt := 2;
+   END_VAR
+
+
+BEGIN
+	REGION Control from HMI  
+	    CASE #userInterface.control OF
+	        1:
+	            #statResultStage_1 := #statResultStage_2 := FALSE;
+	            #statMode := #MODE_STAGE_1_2;
+	            
+	        2:
+	            #statResultStage_1 := FALSE;
+	            #statMode := #MODE_STAGE_1;
+	            
+	        4:
+	            #statResultStage_2 := FALSE;
+	            #statMode := #MODE_STAGE_2;
+	    END_CASE;
+	END_REGION
+	
+	REGION Temp
+	    #tempModeStage_1 := #statMode = #MODE_STAGE_1;
+	    #tempModeStage_2 := #statMode = #MODE_STAGE_2;
+	    #tempModeStage_1_2 := #statMode = #MODE_STAGE_1_2;
+	    #tempSetpointValue := #userInterfaceRetain.setpoint;
+	END_REGION
+	
+	REGION reset error code
+	    IF #resetErrorCode THEN
+	        #userInterface.errorCodeConfirm := w#16#0;
+	    END_IF;
+	END_REGION
+	
+	REGION error code
+	    IF #userInterfaceRetain.hysteresys.stage_2 < #userInterfaceRetain.hysteresys.stage_1 THEN
+	        #userInterface.errorCodeConfirm.%X0 := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION Logic
+	    CASE #statState OF
+	        #STATE_IS_READY:
+	            #statResultStage_1 := #statResultStage_2 := FALSE;
+	            
+	            IF #release THEN
+	                #statState := #STATE_STARTED;
+	            END_IF;
+	            
+	        #STATE_STARTED:
+	            IF #release THEN
+	                IF #tempModeStage_1 XOR #tempModeStage_1_2 THEN
+	                    #tempResult := #statResultStage_1;
+	                    #tempHysteresys := #userInterfaceRetain.hysteresys.stage_1;
+	                ELSIF #tempModeStage_2 THEN
+	                    #tempResult := #statResultStage_2;
+	                    #tempHysteresys := #userInterfaceRetain.hysteresys.stage_2;
+	                END_IF;
+	                
+	                IF #actualValue >= (#tempSetpointValue + #tempHysteresys) THEN
+	                    #tempResult := TRUE;
+	                ELSIF #actualValue <= (#tempSetpointValue - #tempHysteresys) THEN
+	                    #tempResult := FALSE;
+	                END_IF;
+	                
+	                IF #tempModeStage_1 THEN
+	                    #statResultStage_1 := #tempResult;
+	                    #statResultStage_2 := FALSE;
+	                ELSIF #tempModeStage_2 THEN
+	                    #statResultStage_1 := FALSE;
+	                    #statResultStage_2 := #tempResult;
+	                ELSIF #tempModeStage_1_2 THEN
+	                    #statResultStage_1 := #tempResult;
+	                END_IF;
+	                
+	                IF #tempModeStage_1_2 THEN
+	                    IF #actualValue >= (#tempSetpointValue - #userInterfaceRetain.hysteresys.stage_1) THEN
+	                        #statResultStage_2 := TRUE;
+	                    ELSIF #actualValue <= (#tempSetpointValue - #userInterfaceRetain.hysteresys.stage_2) THEN
+	                        #statResultStage_2 := FALSE;
+	                    END_IF;
+	                END_IF;
+	            ELSE
+	                #statState := #STATE_IS_READY;
+	            END_IF;
+	    END_CASE;
+	END_REGION
+	
+	REGION Temp
+	    #tempStarted := #statState = #STATE_STARTED;
+	    #tempStartRelease := NOT #statResultStage_1 AND #tempStarted;
+	    #tempError := #userInterface.errorCodeConfirm <> w#16#0;
+	END_REGION
+	
+	REGION Output interface
+	    #resultStage_1 := #tempStartRelease AND (#tempModeStage_1 XOR #statResultStage_2 AND #tempModeStage_1_2);
+	    #resultStage_2 := #tempStartRelease AND NOT #statResultStage_2 AND (#tempModeStage_2 XOR #tempModeStage_1_2);
+	    
+	//    #userInterface.actualValue := #actualValue;
+	    #error := #tempError;
+	END_REGION
+	
+	REGION InOut interface
+	    #userInterface.status.%X0 := #tempStarted;
+	    #userInterface.status.%X1 := #statMode = #MODE_STAGE_1_2;
+	    #userInterface.status.%X2 := #statMode = #MODE_STAGE_1;
+	    #userInterface.status.%X3 := #statMode = #MODE_STAGE_2;
+	    #userInterface.status.%X4 := #userInterface.errorCodeConfirm.%X0 = TRUE;
+	    #userInterface.status.%X5 := #userInterface.errorCodeConfirm.%X1 = TRUE;
+	    #userInterface.status.%X6 := #userInterface.errorCodeConfirm.%X2 = TRUE;
+	    
+	    //#userInterface.error:=stat;
+	    
+	    //#release := FALSE;
+	    
+	    #userInterface.control := w#16#0;
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+TYPE "typeC05_Statistics"
+VERSION : 0.1
+   STRUCT
+      runtime { ExternalWritable := 'False'} : UInt;
+      switchingCounter { ExternalWritable := 'False'} : UInt;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC07_Runtime"
+VERSION : 0.1
+   STRUCT
+      stages { ExternalWritable := 'False'} : Struct
+         first { ExternalWritable := 'False'} : UInt;
+         second { ExternalWritable := 'False'} : UInt;
+      END_STRUCT;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC05_Other"
+VERSION : 0.1
+   STRUCT
+      setpoints : Struct
+         onDelay : UInt;
+         offDelay : UInt;
+      END_STRUCT;
+      performance : Struct
+         manual : Real;
+         auto : Real;
+      END_STRUCT;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC06_UserInterface"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      activationCounter { ExternalWritable := 'False'} : UInt;
+      control : Word;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+      other { S7_SetPoint := 'False'} : "typeC06_Other";
+   END_STRUCT;
+
+END_TYPE
+
+FUNCTION_BLOCK "FbC08_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_IN_OUT 
+      userInterface : Array[*] of "typeC08_UserInterface";
+      userInterfaceRetain : Array[*] of "typeC08_UserInterfaceRetain";
+   END_VAR
+
+   VAR 
+      Regul_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC08_Instance";
+      Regul_2 : "FbC08_Instance";
+   END_VAR
+
+
+BEGIN
+	//Инициализация блоков регулирования горелок
+	
+	#Regul_1(actualValue:="IdbC03_Loader".TT7_10.value,
+	         // resultStage_1=>"IdbC07_Loader".GB_01.autoStartFirstStage,
+	         //   resultStage_2=>"IdbC07_Loader".GB_01.autoStartSecondStage,,
+	           userInterface := #userInterface[0],
+	           resetErrorCode:="P01_ResetErrorCode",
+	           userInterfaceRetain:=#userInterfaceRetain[0]);
+	
+	  #Regul_2(actualValue:="IdbC03_Loader".TT7_10.value,
+	           // resultStage_1 => "IdbC07_Loader".GB_02.autoStartFirstStage,
+	           // resultStage_2 => "IdbC07_Loader".GB_02.autoStartSecondStage,
+	           userInterface := #userInterface[1],
+	           resetErrorCode:="P01_ResetErrorCode",
+	           userInterfaceRetain := #userInterfaceRetain[1]);
+END_FUNCTION_BLOCK
+
+TYPE "typeC05_UserInterfaces"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      statistics { S7_SetPoint := 'False'} : "typeC05_Statistics";
+      control : Word;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+      other { S7_SetPoint := 'False'} : "typeC05_Other";
+   END_STRUCT;
+
+END_TYPE
+
+FUNCTION "FcRuntime" : Void
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      release : Bool;
+      reset : Bool;
+      cycleTime : Real;
+      setpoint : Real;
+   END_VAR
+
+   VAR_OUTPUT 
+      result : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      actualValue : Real;
+   END_VAR
+
+
+BEGIN
+	IF #reset THEN
+	    #actualValue := Real#0.0;
+	END_IF;
+	
+	IF #release AND (#actualValue < #setpoint) THEN
+	    #actualValue += #cycleTime;
+	END_IF;
+	
+	#result := #actualValue >= #setpoint;
+	
+END_FUNCTION
+
+TYPE "typeC07_UserInterface"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      runtime { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC07_Runtime";
+      control : Word;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+   END_STRUCT;
+
+END_TYPE
+
+TYPE "typeC02_UserInterface"
+VERSION : 0.1
+   STRUCT
+      status { ExternalWritable := 'False'} : Word;
+      events { ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      control : Word;
+      errorCodeConfirm : Word;
+      warningCodeConfirm : Word;
+   END_STRUCT;
+
+END_TYPE
+
+FUNCTION_BLOCK "FbC05_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      diCircuitBreaker { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      diStartedForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      diHardwareError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      interlock { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      emergencyStop { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      cycleTime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_OUTPUT 
+      doStart { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      startedForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      error { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      modeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      performance { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_IN_OUT 
+      autoStartForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      userInterface : "typeC05_UserInterfaces";
+   END_VAR
+
+   VAR RETAIN
+      statSimulation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statManualStartForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statManualStartReverse { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statModeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+   END_VAR
+   VAR 
+      statSuccessfulStart { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statIsEdited { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statState { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+   END_VAR
+   VAR RETAIN
+      statStatistics { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC05_Statistics";
+      statRuntimePerHour { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+      statConfig { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         diCircuitBreaker { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         diStartedForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         diHardwareError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+         doStartForward { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         aoSpeedSetpoint { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      END_STRUCT;
+      statEvents { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      statOther { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC05_Other";
+   END_VAR
+   VAR 
+      instTimers {InstructionName := 'TON_TIME'; LibVersion := '1.0'; ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : Array[1..2] of TON_TIME;
+   END_VAR
+
+   VAR_TEMP 
+      tempCircuitBreakerIsOk : Bool;
+      tempHardwareError : Bool;
+      tempModeManual : Bool;
+      tempRelease : Bool;
+      tempReleaseAuto : Bool;
+      tempReleaseManual : Bool;
+      tempStartForward : Bool;
+      tempStateStopped : Bool;
+      tempStateStartingForward : Bool;
+      tempStateStartedForward : Bool;
+      tempStateStopping : Bool;
+      tempTimerResult : Bool;
+      tempError : Bool;
+      tempWarning : Bool;
+      tempPerformance : Real;
+   END_VAR
+
+   VAR CONSTANT 
+      STATE_UNDEFINED : USInt := 0;
+      STATE_STOPPED : USInt := 1;
+      STATE_STARTING : USInt := 2;
+      STATE_STARTED : USInt := 3;
+      STATE_STOPPING : USInt := 4;
+      PERFORMANCE_MINIMUM : USInt := 0;
+      PERFORMANCE_MAXIMUM : USInt := 100;
+      HOUR : Real := 3600.0;
+   END_VAR
+
+
+BEGIN
+	REGION inout interface
+	    
+	    // stop
+	    IF #userInterface.control.%X0 THEN
+	        #statManualStartForward := #statManualStartReverse := FALSE;
+	    END_IF;
+	    
+	    // start forward
+	    IF #userInterface.control.%X1 THEN
+	        #statManualStartForward := NOT #interlock;
+	    END_IF;
+	    
+	    // start reverse
+	    IF #userInterface.control.%X2 THEN
+	        #statManualStartReverse := NOT #interlock;
+	    END_IF;
+	    // reset error code
+	    IF #userInterface.control.%X3 THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	    
+	    // reset warning code
+	    IF #userInterface.control.%X4 THEN
+	        #statEvents.warnings := w#16#0;
+	    END_IF;
+	    // reset runtime
+	    IF #userInterface.control.%X5 THEN
+	        #statStatistics.runtime := UInt#0;
+	    END_IF;
+	    
+	    // reset switch on counter
+	    IF #userInterface.control.%X6 THEN
+	        #statStatistics.switchingCounter := UInt#0;
+	    END_IF;
+	    // simulation
+	    IF #userInterface.control.%X8 THEN
+	        #statSimulation := NOT #statSimulation;
+	    END_IF;
+	    // mode auto / mode manual
+	    IF #userInterface.control.%X9 THEN
+	        #statModeAuto := NOT #statModeAuto;
+	    END_IF;
+	    
+	    // edit data
+	    IF #userInterface.control.%X15 THEN
+	        #statIsEdited := NOT #statIsEdited;
+	    END_IF;
+	END_REGION
+	
+	REGION temp
+	    #tempCircuitBreakerIsOk := (#statConfig.diCircuitBreaker AND #diCircuitBreaker XOR NOT #statConfig.diCircuitBreaker) OR #statSimulation;
+	    #tempHardwareError := #statConfig.diHardwareError AND #diHardwareError AND NOT #statSimulation;
+	END_REGION
+	
+	REGION reset error code
+	    IF #resetErrorCode THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	END_REGION
+	
+	REGION error code
+	    #tempModeManual := NOT #statModeAuto;
+	    
+	    IF NOT #tempCircuitBreakerIsOk THEN
+	        #statEvents.errors.%X1 := TRUE;
+	    END_IF;
+	    IF ((#statState = #STATE_STARTING) OR (#statState = #STATE_STARTED)) AND #emergencyStop AND #tempModeManual THEN
+	        #statEvents.errors.%X2 := TRUE;
+	    END_IF;
+	    IF #tempHardwareError THEN
+	        #statEvents.errors.%X3 := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION warning code
+	    #statEvents.warnings.%X0 := #statSimulation;
+	    #statEvents.warnings.%X1 := #tempModeManual;
+	    #statEvents.warnings.%X2 := #tempModeManual AND #interlock;
+	END_REGION
+	
+	REGION release
+	    #tempRelease := #tempCircuitBreakerIsOk AND NOT #tempHardwareError AND (#statEvents.errors = w#16#0);
+	    #tempReleaseAuto := #tempRelease AND #statModeAuto;
+	    #tempReleaseManual := #tempRelease AND #tempModeManual AND NOT #emergencyStop;
+	    
+	    IF NOT #tempReleaseManual THEN
+	        #statManualStartForward := #statManualStartReverse := FALSE;
+	    END_IF;
+	    
+	    #tempStartForward :=
+	    #autoStartForward AND #tempReleaseAuto
+	    XOR
+	    #statManualStartForward AND #tempReleaseManual AND NOT #interlock;
+	END_REGION
+	
+	REGION logic
+	    CASE #statState OF
+	        #STATE_UNDEFINED:
+	            IF #statConfig.diStartedForward AND #diStartedForward THEN
+	                #statState := #STATE_STARTED;
+	                #statEvents.errors.%X0 := TRUE;
+	            ELSE
+	                #statState := #STATE_STOPPED;
+	            END_IF;
+	            
+	        #STATE_STOPPED:
+	            IF #statConfig.diStartedForward AND #diStartedForward THEN
+	                #statState := #STATE_STARTED;
+	                #statEvents.errors.%X0 := TRUE;
+	            END_IF;
+	            
+	        #STATE_STARTING:
+	            IF #statConfig.diStartedForward AND #diStartedForward THEN
+	                #statSuccessfulStart := TRUE;
+	                #statState := #STATE_STARTED;
+	            ELSIF #instTimers[1].Q THEN
+	                #statState := #STATE_STOPPED;
+	                #statEvents.errors.%X0 := TRUE;
+	            ELSIF NOT #tempStartForward THEN
+	                #statState := #STATE_STOPPING;
+	            END_IF;
+	            
+	        #STATE_STARTED:
+	            IF #statConfig.diStartedForward AND NOT (#diStartedForward OR #statSimulation) THEN
+	                #statSuccessfulStart := FALSE;
+	                #statState := #STATE_STOPPED;
+	                #statEvents.errors.%X0 := TRUE;
+	            ELSIF NOT #tempStartForward THEN
+	                #statSuccessfulStart := FALSE;
+	                IF #statSimulation OR NOT #statConfig.diStartedForward THEN
+	                    #statState := #STATE_STOPPED;
+	                ELSE
+	                    #statState := #STATE_STOPPING;
+	                END_IF;
+	            END_IF;
+	            
+	        #STATE_STOPPING:
+	            IF #statConfig.diStartedForward AND NOT #diStartedForward THEN
+	                #statState := #STATE_STOPPED;
+	            ELSIF #instTimers[2].Q THEN
+	                #statState := #STATE_STARTED;
+	                #statEvents.errors.%X0 := TRUE;
+	            END_IF;
+	    END_CASE;
+	    
+	    CASE #statState OF
+	        #STATE_STOPPED, #STATE_STOPPING:
+	            IF #tempStartForward THEN
+	                IF #statSimulation OR NOT #statConfig.diStartedForward THEN
+	                    #statSuccessfulStart := TRUE;
+	                    #statState := #STATE_STARTED;
+	                ELSE
+	                    #statState := #STATE_STARTING;
+	                END_IF;
+	                #statStatistics.switchingCounter += UInt#1;
+	            END_IF;
+	    END_CASE;
+	END_REGION
+	
+	REGION temp
+	    #tempStateStopped := #statState = #STATE_STOPPED;
+	    #tempStateStartingForward := #statState = #STATE_STARTING;
+	    #tempStateStartedForward := #statState = #STATE_STARTED;
+	    #tempStateStopping := #statState = #STATE_STOPPING;
+	    
+	    #tempError := #statEvents.errors <> w#16#0;
+	    #tempWarning := #statEvents.warnings <> w#16#0;
+	END_REGION
+	
+	REGION runtime statistic
+	    "FcRuntime"(release := #tempStateStartedForward,
+	                reset := #statRuntimePerHour >= #HOUR,
+	                cycleTime := #cycleTime,
+	                setpoint := #HOUR,
+	                result => #tempTimerResult,
+	                actualValue := #statRuntimePerHour);
+	    
+	    IF #tempTimerResult THEN
+	        #statStatistics.runtime += UInt#1;
+	    END_IF;
+	END_REGION
+	
+	REGION timers
+	    #instTimers[1](IN := #tempStateStartingForward,
+	                   PT := UINT_TO_TIME(#statOther.setpoints.onDelay));
+	    #instTimers[2](IN := #tempStateStopping,
+	                   PT := UINT_TO_TIME(#statOther.setpoints.offDelay));
+	END_REGION
+	
+	REGION perfomance
+	    #tempPerformance := Real#0.0;
+	    
+	    IF #statConfig.aoSpeedSetpoint AND #tempStartForward THEN
+	        IF #tempModeManual THEN
+	            #tempPerformance := LIMIT(MN := #PERFORMANCE_MINIMUM,
+	                                      IN := #statOther.performance.manual,
+	                                      MX := #PERFORMANCE_MAXIMUM);
+	        ELSE
+	            #tempPerformance := LIMIT(MN := #PERFORMANCE_MINIMUM,
+	                                      IN := #statOther.performance.auto,
+	                                      MX := #PERFORMANCE_MAXIMUM);
+	        END_IF;
+	    END_IF;
+	END_REGION
+	
+	REGION output interface
+	    #doStart :=
+	    #statConfig.doStartForward
+	    AND
+	    (#tempStateStartingForward OR (#tempStateStartedForward AND #statSuccessfulStart));
+	    
+	    #startedForward := #tempStateStartedForward;
+	    #error := #tempError;
+	    #modeAuto := #statModeAuto;
+	    
+	    #performance := #tempPerformance;
+	END_REGION
+	
+	REGION inout interface
+	    #userInterface.status.%X0 := #tempStateStartedForward;
+	    #userInterface.status.%X2 := #statSimulation;
+	    #userInterface.status.%X3 := #statModeAuto;
+	    #userInterface.status.%X4 := #tempError;
+	    #userInterface.status.%X5 := #tempWarning;
+	    #userInterface.status.%X15 := #statIsEdited;
+	    
+	    #userInterface.events := #statEvents;
+	    #userInterface.statistics := #statStatistics;
+	    #userInterface.control := w#16#0;
+	    
+	    IF NOT #statIsEdited THEN
+	        #userInterface.other := #statOther;
+	    ELSE
+	        #statOther :=#userInterface.other;
+	    END_IF;
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC07_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      autoStartFirstStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Активация первой ступени в автомате
+      autoStartSecondStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Активация второй ступени в автомате
+      diCircuitBreaker1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Состояние автоматического выключателя 380В
+      diCircuitBreaker2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Состояние автоматического выключателя 220В
+      diHardwareError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Ошибка оборудования
+      interlock { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Блокировка запуска (ручной режим)
+      emergencyStop { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Останов (ручной режим)
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Сброс ошибки
+      cycleTime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_OUTPUT 
+      doStartFirstStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      doStartSecondStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      firstStageStarted { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      secondStageStarted { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      error { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      modeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      controlStarted { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      userInterface : "typeC07_UserInterface";
+   END_VAR
+
+   VAR RETAIN
+      statSimulation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      statModeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+   END_VAR
+   VAR 
+      statManualStartFirstStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statManualStartSecondStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statIsEdited { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statState { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+   END_VAR
+   VAR RETAIN
+      statConfig { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         diCircuitBreaker1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         diCircuitBreaker2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         diHardwareError { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+         doStartStage_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         doStartStage_2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+      END_STRUCT;
+      statRuntimePerHour { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         firstStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+         secondStage { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+      END_STRUCT;
+      statRuntime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC07_Runtime";
+      statEvents { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+   END_VAR
+
+   VAR_TEMP 
+      tempCircuitBreaker1IsOk : Bool;   // Автоматический выключатель 380В
+      tempCircuitBreaker2IsOk : Bool;   // Автоматический выключатель 220В
+      tempHardwareError : Bool;   // Ошибка оборудования
+      tempModeManual : Bool;   // Ручной режим
+      tempRelease : Bool;   // Разрешение на запуск
+      tempReleaseAuto : Bool;
+      tempReleaseManual : Bool;
+      tempStartFirstStage : Bool;   // Запуск ступени 1
+      tempStartSecondStage : Bool;   // Запуск ступени 2
+      tempStateStopped : Bool;   // Состояние "Выключен"
+      tempStateStarted : Bool;   // Состояние "Запущен"
+      tempError : Bool;   // Ошибка
+      tempWarning : Bool;   // Предупреждение
+      tempRuntimeResult : Bool;
+      tempFirstStageStarted : Bool;
+   END_VAR
+
+   VAR CONSTANT 
+      STATE_STOPPED : USInt := 1;
+      STATE_STARTED : USInt := 2;   // Состояние "Запущен"
+      HOUR : Real := 3600.0;   // 1 час
+   END_VAR
+
+
+BEGIN
+	REGION inout interface
+	
+	    // first stage. switch off
+	    IF #userInterface.control.%X2 THEN
+	        #statManualStartFirstStage := #statManualStartSecondStage := FALSE;
+	    END_IF;
+	    // first stage. switch on
+	    IF #userInterface.control.%X3 THEN
+	        #statManualStartFirstStage := TRUE;
+	        #statManualStartSecondStage := FALSE;
+	    END_IF;
+	    // second stage. switch off
+	    IF #userInterface.control.%X4 THEN
+	        #statManualStartSecondStage := FALSE;
+	    END_IF;
+	    // second stage. switch on
+	    IF #userInterface.control.%X5 THEN
+	        #statManualStartFirstStage := #statManualStartSecondStage := TRUE;
+	    END_IF;
+	    // reset error code
+	    IF #userInterface.control.%X6 THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	    
+	    // reset warning code
+	    IF #userInterface.control.%X7 THEN
+	        #statEvents.warnings := w#16#0;
+	    END_IF;
+	    // simulation
+	    IF #userInterface.control.%X10 THEN
+	        #statSimulation := NOT #statSimulation;
+	    END_IF;
+	    
+	    // mode auto / mode manual
+	    IF #userInterface.control.%X11 THEN
+	        #statModeAuto := NOT #statModeAuto;
+	    END_IF;
+	    // reset first stage runtime
+	    IF #userInterface.control.%X13 THEN
+	        #statRuntime.stages.first := UInt#0;
+	    END_IF;
+	        // reset second stage runtime
+	    IF #userInterface.control.%X14 THEN
+	        #statRuntime.stages.second := UInt#0;
+	    END_IF;
+	        // edit data
+	    IF #userInterface.control.%X15 THEN
+	        #statIsEdited := NOT #statIsEdited;
+	    END_IF;
+	END_REGION
+	
+	REGION reset error code
+	    IF #resetErrorCode THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	END_REGION
+	
+	REGION temp
+	    #tempCircuitBreaker1IsOk := (#statConfig.diCircuitBreaker1 AND #diCircuitBreaker1 XOR NOT #statConfig.diCircuitBreaker1) OR #statSimulation;
+	    #tempCircuitBreaker2IsOk := (#statConfig.diCircuitBreaker2 AND #diCircuitBreaker2 XOR NOT #statConfig.diCircuitBreaker2) OR #statSimulation;
+	    #tempHardwareError := #statConfig.diHardwareError AND #diHardwareError AND NOT #statSimulation;
+	END_REGION
+	
+	REGION error code
+	    #tempModeManual := NOT #statModeAuto;
+	    
+	    IF NOT #tempCircuitBreaker1IsOk THEN
+	        #statEvents.errors.%X1 := TRUE;
+	    END_IF;
+	    IF (#statState = #STATE_STARTED) AND #tempModeManual AND #emergencyStop THEN
+	        #statEvents.errors.%X2 := TRUE;
+	    END_IF;
+	    IF #autoStartFirstStage AND #autoStartSecondStage THEN
+	        #statEvents.errors.%X3 := TRUE;
+	    END_IF;
+	    IF #tempHardwareError THEN
+	        #statEvents.errors.%X4 := TRUE;
+	    END_IF;
+	    IF NOT #tempCircuitBreaker2IsOk THEN
+	        #statEvents.errors.%X5 := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION warning code
+	    #statEvents.warnings.%X0 := #statSimulation;
+	    #statEvents.warnings.%X1 := #tempModeManual;
+	    #statEvents.warnings.%X2 := #tempModeManual AND #interlock;
+	END_REGION
+	
+	REGION release
+	    #tempRelease := #tempCircuitBreaker1IsOk AND #tempCircuitBreaker2IsOk AND NOT #tempHardwareError AND (#statEvents.errors = w#16#0);
+	    #tempReleaseAuto := #tempRelease AND #statModeAuto;
+	    #tempReleaseManual := #tempRelease AND #tempModeManual AND NOT #emergencyStop;
+	    
+	    IF NOT #tempReleaseManual THEN
+	        #statManualStartFirstStage := #statManualStartFirstStage := FALSE;
+	    END_IF;
+	    
+	    #tempStartFirstStage :=
+	    (#autoStartFirstStage XOR #autoStartSecondStage) AND #tempReleaseAuto
+	    XOR
+	    (#statManualStartFirstStage XOR #statManualStartSecondStage) AND #tempReleaseManual;
+	    
+	    #tempStartSecondStage :=
+	   ( #autoStartSecondStage AND #tempReleaseAuto XOR #statManualStartSecondStage AND #tempReleaseManual) AND NOT #interlock;
+	END_REGION
+	
+	REGION logic
+	    CASE #statState OF
+	        #STATE_STOPPED:
+	            IF #tempStartFirstStage XOR #tempStartSecondStage THEN
+	                #statState := #STATE_STARTED;
+	            END_IF;
+	            
+	        #STATE_STARTED:
+	            IF NOT (#tempStartFirstStage OR #tempStartSecondStage) THEN
+	                #statState := #STATE_STOPPED;
+	            END_IF;
+	        ELSE
+	            #statState := #STATE_STOPPED; ;
+	    END_CASE;
+	END_REGION
+	
+	REGION temp
+	    #tempStateStopped := #statState = #STATE_STOPPED;
+	    #tempStateStarted := #statState = #STATE_STARTED;
+	    
+	    #tempError := #statEvents.errors <> w#16#0;
+	    #tempWarning := #statEvents.warnings <> w#16#0;
+	    //14052022 Добавлена активации первой ступени при работе второй "OR #tempStartSecondStage;"
+	    #tempFirstStageStarted := (#tempStartFirstStage OR #tempStartSecondStage) AND NOT #interlock;
+	END_REGION
+	
+	REGION runtime
+	    "FcRuntime"(release := #tempStateStarted AND #tempStartFirstStage AND NOT #tempStartSecondStage,
+	                reset := #statRuntimePerHour.firstStage >= #HOUR,
+	                cycleTime := #cycleTime,
+	                setpoint := #HOUR,
+	                result => #tempRuntimeResult,
+	                actualValue := #statRuntimePerHour.firstStage);
+	    
+	    IF #tempRuntimeResult THEN
+	        #statRuntime.stages.first += UInt#1;
+	    END_IF;
+	    
+	    "FcRuntime"(release := #tempStateStarted AND #tempStartSecondStage,
+	                reset := #statRuntimePerHour.secondStage >= #HOUR,
+	                cycleTime := #cycleTime,
+	                setpoint := #HOUR,
+	                result => #tempRuntimeResult,
+	                actualValue := #statRuntimePerHour.secondStage);
+	    
+	    IF #tempRuntimeResult THEN
+	        #statRuntime.stages.second += UInt#1;
+	    END_IF;
+	END_REGION
+	
+	REGION output interface
+	    #controlStarted := #tempFirstStageStarted;
+	    #firstStageStarted := #tempFirstStageStarted;
+	    #secondStageStarted := #tempStartSecondStage;
+	    #error := #tempError;
+	    #modeAuto := #statModeAuto;
+	END_REGION
+	
+	REGION inout interface
+	  //  #autoStartFirstStage := #autoStartSecondStage := FALSE;
+	    
+	    #userInterface.status.%X1 := #tempFirstStageStarted;
+	    #userInterface.status.%X2 := #tempStartSecondStage;
+	    #userInterface.status.%X4 := #statSimulation;
+	    #userInterface.status.%X5 := #statModeAuto;
+	    #userInterface.status.%X6 := #tempError;
+	    #userInterface.status.%X7 := #tempWarning;
+	    
+	    #userInterface.runtime := #statRuntime;
+	    #userInterface.events := #statEvents;
+	    #userInterface.control := w#16#0;
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC02_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      release { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+
+   VAR_OUTPUT 
+      result { ExternalWritable := 'False'} : Bool;
+   END_VAR
+
+   VAR_IN_OUT 
+      userInterface : "typeC02_UserInterface";
+   END_VAR
+
+   VAR RETAIN
+      statSimulation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statSimulationValue { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statInverse { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+   VAR 
+      statIsEdited { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+   VAR RETAIN
+      statEvents { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+   END_VAR
+
+   VAR_TEMP 
+      tempResult : Bool;
+   END_VAR
+
+
+BEGIN
+	REGION inout interface
+	    // simulation
+	    IF #userInterface.control.%X0 THEN
+	        #statSimulation := NOT #statSimulation;
+	    END_IF;
+	    
+	    // simulation value
+	    IF #userInterface.control.%X1 THEN
+	        #statSimulationValue := NOT #statSimulationValue;
+	    END_IF;
+	    
+	    // inverse
+	    IF #userInterface.control.%X2 THEN
+	        #statInverse := NOT #statInverse;
+	    END_IF;
+	    
+	    // edit data
+	    IF #userInterface.control.%X15 THEN
+	        #statIsEdited := NOT #statIsEdited;
+	    END_IF;
+	END_REGION
+	
+	REGION logic
+	    IF #statSimulation THEN
+	        #tempResult := #statSimulationValue;
+	    ELSE
+	        #tempResult := #release XOR #statInverse;
+	    END_IF;
+	END_REGION
+	
+	REGION warning code after logic
+	    #statEvents.warnings.%X15 := #statIsEdited;
+	END_REGION
+	
+	REGION out interface
+	    #result := #tempResult;
+	END_REGION
+	
+	REGION inout interface
+	    #userInterface.status.%X0 := #statSimulation;
+	    #userInterface.status.%X1 := #statSimulationValue;
+	    #userInterface.status.%X2 := #statInverse;
+	    #userInterface.status.%X3 := #tempResult;
+	    #userInterface.status.%X15 := #statIsEdited;
+	    
+	    #userInterface.events := #statEvents;
+	    #userInterface.control := w#16#0;
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+DATA_BLOCK "IdbC08_Loader"
+{ DB_Accessible_From_OPC_UA := 'FALSE' ;
+ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC08_Loader"
+
+BEGIN
+
+END_DATA_BLOCK
+
+FUNCTION_BLOCK "FbC06_Instance"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      diCircuitBreaker { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      diActivated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      diDeactivated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      interlockActivation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      interlockDeactivation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      emergencyStop { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+
+   VAR_OUTPUT 
+      doActivate { ExternalWritable := 'False'} : Bool;
+      doDeactivate { ExternalWritable := 'False'} : Bool;
+      activated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      deactivated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      error { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      modeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+   END_VAR
+
+   VAR_IN_OUT 
+      autoActivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      autoDeactivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      userInterface : "typeC06_UserInterface";
+   END_VAR
+
+   VAR RETAIN
+      statSimulation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statModeAuto { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+      statContiniousControl { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+      statManualActivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statManualDeactivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+   END_VAR
+   VAR 
+      statSuccesfulActivation { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statSuccesfulDeactivtion { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statIsEdited { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+      statState { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+   END_VAR
+   VAR RETAIN
+      statActivationCounter { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : UInt;
+      statConfig { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         diCircuitBreaker { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+         diActivated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+         diDeactivated { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+         doActivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := true;
+         doDeactivate { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool := false;
+      END_STRUCT;
+      statEvents { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeEvents";
+      statOther { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "typeC06_Other";
+      instTimers {InstructionName := 'TON_TIME'; LibVersion := '1.0'; ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : Array[1..3] of TON_TIME;
+   END_VAR
+
+   VAR_TEMP 
+      tempCircuitBreakerIsOk : Bool;
+      tempModeManual : Bool;
+      tempRelease : Bool;
+      tempReleaseAuto : Bool;
+      tempReleaseManual : Bool;
+      tempActivate : Bool;
+      tempDeactivate : Bool;
+      tempActivated : Bool;
+      tempDeactivated : Bool;
+      tempA : Bool;
+      tempD : Bool;
+      tempStateInPosition : Bool;
+      tempStateDeactivated : Bool;
+      tempStateActivating : Bool;
+      tempStateActivated : Bool;
+      tempStateDeactivating : Bool;
+      tempError : Bool;
+      tempWarning : Bool;
+   END_VAR
+
+   VAR CONSTANT 
+      STATE_UNDEFINED : USInt := 0;
+      STATE_IN_POSITION : USInt := 1;
+      STATE_DEACTIVATED : USInt := 2;
+      STATE_ACTIVATING : USInt := 3;
+      STATE_ACTIVATED : USInt := 4;
+      STATE_DEACTIVATING : USInt := 5;
+   END_VAR
+
+
+BEGIN
+	REGION inout interface
+	    // reset
+	    IF #userInterface.control.%X0 THEN
+	        #statManualActivate := #statManualDeactivate := FALSE;
+	    END_IF;
+	    
+	    // activate
+	    IF #userInterface.control.%X1 THEN
+	        #statManualActivate := NOT #interlockActivation;
+	        #statManualDeactivate := FALSE;
+	    END_IF;
+	    
+	    // deactivate
+	    IF #userInterface.control.%X2 THEN
+	        #statManualDeactivate := NOT #interlockDeactivation;
+	        #statManualActivate := FALSE;
+	    END_IF;
+	    // reset error code
+	    IF #userInterface.control.%X3 THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	    
+	    // reset warning code
+	    IF #userInterface.control.%X4 THEN
+	        #statEvents.warnings := w#16#0;
+	    END_IF;
+	    // reset activation counter
+	    IF #userInterface.control.%X5 THEN
+	        #statActivationCounter := UInt#0;
+	    END_IF;
+	    // simulation
+	    IF #userInterface.control.%X6 THEN
+	        #statSimulation := NOT #statSimulation;
+	    END_IF;
+	    // mode auto / mode manual
+	    IF #userInterface.control.%X7 THEN
+	        #statModeAuto := NOT #statModeAuto;
+	    END_IF;
+	    
+	    // edit data
+	    IF #userInterface.control.%X15 THEN
+	        #statIsEdited := NOT #statIsEdited;
+	    END_IF;
+	END_REGION
+	
+	REGION reset error code
+	    IF #resetErrorCode THEN
+	        #statEvents.errors := w#16#0;
+	    END_IF;
+	END_REGION
+	
+	REGION temp
+	    #tempCircuitBreakerIsOk := (#statConfig.diCircuitBreaker AND #diCircuitBreaker XOR NOT #statConfig.diCircuitBreaker) OR #statSimulation;
+	END_REGION
+	
+	REGION error code
+	    #tempModeManual := NOT #statModeAuto;
+	    
+	    IF NOT #tempCircuitBreakerIsOk THEN
+	        #statEvents.errors.%X1 := TRUE;
+	    END_IF;
+	    IF ((#statState = #STATE_ACTIVATING) OR (#statState = #STATE_ACTIVATED)) AND #tempModeManual AND #emergencyStop THEN
+	        #statEvents.errors.%X2 := TRUE;
+	    END_IF;
+	    IF #autoActivate AND #autoDeactivate THEN
+	        #statEvents.errors.%X3 := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION warning code
+	    #statEvents.warnings.%X0 := #statSimulation;
+	    #statEvents.warnings.%X1 := #tempModeManual;
+	    #statEvents.warnings.%X2 := #tempModeManual AND #interlockActivation;
+	    #statEvents.warnings.%X3 := #tempModeManual AND #interlockDeactivation;
+	END_REGION
+	
+	REGION release
+	    #tempRelease := #tempCircuitBreakerIsOk AND (#statEvents.errors = w#16#0);
+	    #tempReleaseAuto := #tempRelease AND #statModeAuto;
+	    #tempReleaseManual := #tempRelease AND #tempModeManual AND NOT #emergencyStop;
+	    
+	    IF NOT #tempReleaseManual THEN
+	        #statManualActivate := #statManualDeactivate := FALSE;
+	    END_IF;
+	    
+	    #tempActivate :=
+	    #autoActivate AND #tempReleaseAuto
+	    XOR
+	    #statManualActivate AND #tempReleaseManual AND NOT #interlockActivation;
+	    
+	    #tempDeactivate :=
+	    #autoDeactivate AND #tempReleaseAuto
+	    XOR
+	    #statManualDeactivate AND #tempReleaseManual AND NOT #interlockDeactivation;
+	END_REGION
+	
+	REGION logic
+	    #tempActivated := #statConfig.diActivated AND #diActivated;
+	    #tempDeactivated := #statConfig.diDeactivated AND #diDeactivated;
+	    
+	    IF #tempActivated AND #tempDeactivated THEN
+	        #statSuccesfulActivation := #statSuccesfulDeactivtion := FALSE;
+	        #statState := #STATE_UNDEFINED;
+	        #statEvents.errors.%X1 := TRUE;
+	    END_IF;
+	    
+	    #tempA := #tempD;
+	    
+	    CASE #statState OF
+	        #STATE_UNDEFINED:
+	            IF NOT (#tempActivated OR #tempDeactivated) THEN
+	                IF #tempActivated AND NOT #tempDeactivated THEN
+	                    #statState := #STATE_ACTIVATED;
+	                ELSIF NOT #tempActivated AND #tempDeactivated THEN
+	                    #statState := #STATE_DEACTIVATED;
+	                ELSE
+	                    #statState := #STATE_IN_POSITION;
+	                END_IF;
+	            ELSE
+	                IF #tempActivated AND NOT #tempDeactivated THEN
+	                    #statState := #STATE_ACTIVATED;
+	                ELSIF NOT #tempActivated AND #tempDeactivated THEN
+	                    #statState := #STATE_DEACTIVATED;
+	                ELSE              
+	                    #statState := #STATE_IN_POSITION;
+	                END_IF;
+	            END_IF;
+	            
+	        #STATE_IN_POSITION:
+	            IF #tempActivated THEN
+	                #statState := #STATE_ACTIVATED;
+	                #statEvents.errors.%X0 := TRUE;
+	            ELSIF #tempDeactivated THEN
+	                #statState := #STATE_DEACTIVATED;
+	                #statEvents.errors.%X0 := TRUE;
+	            END_IF;
+	            
+	        #STATE_DEACTIVATED:
+	            IF NOT #statSimulation THEN
+	                IF #statConfig.diDeactivated THEN
+	                    IF NOT #diDeactivated THEN
+	                        #statSuccesfulDeactivtion := FALSE;
+	                        #statState := #STATE_IN_POSITION;
+	                        #statEvents.errors.%X0 := TRUE;
+	                    END_IF;
+	                ELSE
+	                    IF NOT (#tempActivate OR #tempDeactivate) THEN
+	                        #statSuccesfulDeactivtion := FALSE;
+	                        #statState := #STATE_IN_POSITION;
+	                    END_IF;
+	                END_IF;
+	            END_IF;
+	            
+	        #STATE_ACTIVATING:
+	            IF #tempActivated XOR NOT #statConfig.diActivated AND #instTimers[1].Q AND #instTimers[3].Q THEN
+	                #statSuccesfulActivation := TRUE;
+	                #statState := #STATE_ACTIVATED;
+	            ELSIF #statConfig.diActivated AND #instTimers[1].Q  AND #instTimers[3].Q THEN
+	                IF #tempDeactivated THEN
+	                    #statState := #STATE_DEACTIVATED;
+	                ELSE
+	                    #statState := #STATE_IN_POSITION;
+	                END_IF;
+	                #statEvents.errors.%X0 := TRUE;
+	            END_IF;
+	            
+	        #STATE_ACTIVATED:
+	            IF NOT #statSimulation THEN
+	                IF #statConfig.diActivated THEN
+	                    IF NOT #diActivated THEN
+	                        #statSuccesfulActivation := FALSE;
+	                        #statState := #STATE_IN_POSITION;
+	                        #statEvents.errors.%X0 := TRUE;
+	                    END_IF;
+	                ELSE
+	                    IF NOT (#tempActivate OR #tempDeactivate) THEN
+	                        #statSuccesfulActivation := FALSE;
+	                        #statState := #STATE_IN_POSITION;
+	                    END_IF;
+	                END_IF;
+	            END_IF;
+	            
+	        #STATE_DEACTIVATING:
+	            IF #tempDeactivated XOR NOT #statConfig.diDeactivated AND #instTimers[2].Q  AND #instTimers[3].Q THEN
+	                #statSuccesfulDeactivtion := TRUE;
+	                #statState := #STATE_DEACTIVATED;
+	            ELSIF #statConfig.diDeactivated AND #instTimers[2].Q AND #instTimers[3].Q THEN
+	                IF #tempActivated THEN
+	                    #statState := #STATE_ACTIVATED;
+	                ELSE
+	                    #statState := #STATE_IN_POSITION;
+	                END_IF;
+	                #statEvents.errors.%X0 := TRUE;
+	            END_IF;
+	    END_CASE;
+	    
+	    CASE #statState OF
+	        #STATE_DEACTIVATED, #STATE_DEACTIVATING:
+	            IF #tempActivate THEN
+	                #tempA := TRUE;
+	            END_IF;
+	            
+	        #STATE_ACTIVATING, #STATE_ACTIVATED:
+	            IF #tempDeactivate THEN
+	                #tempD := TRUE;
+	            END_IF;
+	            
+	        #STATE_IN_POSITION:
+	            IF #tempActivate THEN
+	                #tempA := TRUE;
+	            ELSIF #tempDeactivate THEN
+	                #tempD := TRUE;
+	            END_IF;
+	    END_CASE;
+	    
+	    IF #tempA THEN
+	        IF #statSimulation THEN
+	            #statSuccesfulActivation := TRUE;
+	            #statState := #STATE_ACTIVATED;
+	        ELSE
+	            #statState := #STATE_ACTIVATING;
+	        END_IF;
+	        #statActivationCounter += UInt#1;
+	    ELSIF #tempD THEN
+	        IF #statSimulation THEN
+	            #statSuccesfulDeactivtion := TRUE;
+	            #statState := #STATE_DEACTIVATED;
+	        ELSE
+	            #statState := #STATE_DEACTIVATING;
+	        END_IF;
+	    END_IF;
+	END_REGION
+	
+	REGION temp
+	    #tempStateInPosition := #statState = #STATE_IN_POSITION;
+	    #tempStateDeactivated := #statState = #STATE_DEACTIVATED;
+	    #tempStateActivating := #statState = #STATE_ACTIVATING;
+	    #tempStateActivated := #statState = #STATE_ACTIVATED;
+	    #tempStateDeactivating := #statState = #STATE_DEACTIVATING;
+	    
+	    #tempError := #statEvents.errors <> w#16#0;
+	    #tempWarning := #statEvents.warnings <> w#16#0;
+	END_REGION
+	
+	REGION timers
+	    #instTimers[1](IN := #tempStateActivating,
+	                   PT := UINT_TO_TIME(#statOther.setpoints.activation) * 1000);
+	    
+	    #instTimers[2](IN := #tempStateDeactivating,
+	                   PT := UINT_TO_TIME(#statOther.setpoints.deactivation)*1000);
+	   //Таймер минимального времени работы клапана 
+	    #instTimers[3](IN := #tempStateActivating OR #tempStateDeactivating,
+	                   PT := UINT_TO_TIME(#statOther.setpoints.delayonof) * 1000);
+	END_REGION
+	
+	REGION output interface
+	    #doActivate :=
+	    #statConfig.doActivate
+	    AND
+	    (#tempStateActivating OR #tempStateActivated AND (#statSuccesfulActivation AND #statContiniousControl));
+	    
+	    #doDeactivate :=
+	    #statConfig.doDeactivate
+	    AND
+	    (#tempStateDeactivating OR #tempStateDeactivated AND (#statSuccesfulDeactivtion AND #statContiniousControl));
+	    
+	    #activated := #tempStateActivated;
+	    #deactivated := #tempStateDeactivated;
+	    #error := #tempError;
+	    #modeAuto := #statModeAuto;
+	END_REGION
+	
+	REGION inout interface    
+	    #userInterface.status.%X0 := #tempStateActivated;
+	    #userInterface.status.%X1 := #tempStateDeactivated;
+	    #userInterface.status.%X2 := #tempStateInPosition;
+	    #userInterface.status.%X3 := #statSimulation;
+	    #userInterface.status.%X4 := #statModeAuto;
+	    #userInterface.status.%X5 := #tempError;
+	    #userInterface.status.%X6 := #tempWarning;
+	    #userInterface.status.%X7 := #doActivate;
+	    #userInterface.status.%X8 := #doDeactivate;
+	    #userInterface.events := #statEvents;
+	    #userInterface.activationCounter:= #statActivationCounter;
+	    #userInterface.control := w#16#0;
+	    
+	    IF NOT #statIsEdited THEN
+	        #userInterface.other := #statOther;
+	    ELSE
+	        #statOther:= #userInterface.other;
+	    END_IF;
+	END_REGION
+	
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC05_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      cycleTime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_IN_OUT 
+      userInterfaces : Array[*] of "typeC05_UserInterfaces";
+   END_VAR
+
+   VAR 
+      M_01 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC05_Instance";
+      M_02 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC05_Instance";
+      M_03 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC05_Instance";
+      M_04 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC05_Instance";
+   END_VAR
+
+
+BEGIN
+	//Приточный вентилятор 1
+	#M_01(diStartedForward := "DI2_M1",
+	      diCircuitBreaker := "DI1_M1",
+	      resetErrorCode := "P01_ResetErrorCode",
+	      cycleTime := #cycleTime,
+	      doStart => "D0_M1",
+	      userInterface := #userInterfaces[0]);
+	//Приточный вентилятор 2
+	#M_02(diStartedForward := "DI2_M2",
+	      diCircuitBreaker := "DI1_M2",
+	      resetErrorCode := "P01_ResetErrorCode",
+	      cycleTime := #cycleTime,
+	      doStart => "D0_M2",
+	      userInterface := #userInterfaces[1]);
+	//Вытяжной вентилятор 1
+	#M_03(diStartedForward := "DI2_M3",
+	      diCircuitBreaker := "DI1_M3",
+	      resetErrorCode := "P01_ResetErrorCode",
+	      cycleTime := #cycleTime,
+	      doStart => "D0_M3",
+	      userInterface := #userInterfaces[2]);
+	//Вытяжной вентилятор 2
+	#M_04(diStartedForward := "DI2_M4",
+	      diCircuitBreaker := "DI1_M4",
+	      resetErrorCode := "P01_ResetErrorCode",
+	      cycleTime := #cycleTime,
+	      doStart => "D0_M4",
+	      userInterface := #userInterfaces[3]);
+	
+	
+	
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC07_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      cycleTime { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Real;
+   END_VAR
+
+   VAR_IN_OUT 
+      userInterface : Array[*] of "typeC07_UserInterface";
+   END_VAR
+
+   VAR 
+      GB_01 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC07_Instance";
+      GB_02 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC07_Instance";
+   END_VAR
+
+
+BEGIN
+	//Инициализация блоков управления горелками
+	#GB_01(
+	       autoStartFirstStage := "IdbC08_Loader".Regul_1.resultStage_1 OR "GB_01_StartStage1",
+	       autoStartSecondStage := "IdbC08_Loader".Regul_1.resultStage_2,
+	       diCircuitBreaker1 := "DiCircuitBreaker1_Gb1",
+	       diCircuitBreaker2 := "DiCircuitBreaker2_Gb1",
+	       resetErrorCode := "P01_ResetErrorCode",
+	       cycleTime := #cycleTime,
+	       controlStarted => "DoStartRegulation_Gb1",
+	       firstStageStarted => "DoStartFirstStage_Gb1",
+	       secondStageStarted => "DoStartSecondStage_Gb1",
+	       userInterface := #userInterface[0]);
+	
+	#GB_02(
+	       autoStartFirstStage := "IdbC08_Loader".Regul_2.resultStage_1 OR "GB_02_StartStage1",
+	       autoStartSecondStage := "IdbC08_Loader".Regul_2.resultStage_2,
+	       diCircuitBreaker1 := "DiCircuitBreaker1_Gb2",
+	       diCircuitBreaker2 := "DiCircuitBreaker2_Gb2",
+	       resetErrorCode := "P01_ResetErrorCode",
+	       cycleTime := #cycleTime,
+	       controlStarted => "DoStartRegulation_Gb2",
+	       firstStageStarted => "DoStartFirstStage_Gb2",
+	       secondStageStarted => "DoStartSecondStage_Gb2",
+	       userInterface := #userInterface[1]);
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC02_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_IN_OUT 
+      userInterfaces : Array[*] of "typeC02_UserInterface";
+   END_VAR
+
+   VAR 
+      HL_01 { S7_SetPoint := 'False'} : "FbC02_Instance";   // Свет
+      instMe_04 { S7_SetPoint := 'False'} : "FbC02_Instance";
+      instMe_05 { S7_SetPoint := 'False'} : "FbC02_Instance";
+      instMe_06 { S7_SetPoint := 'False'} : "FbC02_Instance";
+      instMe_07 : "FbC02_Instance";
+      instMe_08 : "FbC02_Instance";
+      instMe_09 : "FbC02_Instance";
+      instMe_10 : "FbC02_Instance";
+   END_VAR
+
+
+BEGIN
+	//Свет 
+	#HL_01(result => "KO1",
+	       userInterface := #userInterfaces[0]);
+	
+	
+	
+END_FUNCTION_BLOCK
+
+FUNCTION_BLOCK "FbC06_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_IN_OUT 
+      userInterfaces : Array[*] of "typeC06_UserInterface";
+   END_VAR
+
+   VAR 
+      Y_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC06_Instance";
+      Y_2 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : "FbC06_Instance";
+   END_VAR
+
+
+BEGIN
+	//Инициализация блоков управления клапанами
+	#Y_1(resetErrorCode:="P01_ResetErrorCode",
+	     doActivate=>"DO1_Y1",
+	     userInterface := #userInterfaces[0]);
+	
+	#Y_2(resetErrorCode:="P01_ResetErrorCode",
+	     doActivate => "DO1_Y2",
+	     userInterface := #userInterfaces[1]);
+	      
+	      
+END_FUNCTION_BLOCK
+
+DATA_BLOCK "DbU1_Recipe"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+   VAR RETAIN
+      NumCycl : Int;   // Колличество циклов
+      TemSet_1 : Real;   // Температура при окрашивании
+      GistLow_1 : Real;   // Нижний гистерезис при окрашивании
+      GistHigh_1 : Real;   // Верхний гистерезис при окрашивании
+      TemSet_2 : Real;   // Температура при сушки
+      GistLow_2 : Real;   // Нижний гистерезис при сушки
+      GistHigh_2 : Real;   // Верхний гистерезис при сушки
+      TimeDrying : Real;   // Время сушки
+      TemSet_3 : Real;   // Температура при продувке
+      TimePurge : Real;   // Время продувки
+   END_VAR
+   VAR 
+      TemSetHigh : Real;   // Аварийная температура
+   END_VAR
+
+
+BEGIN
+   NumCycl := 1;
+   TemSet_1 := 25.0;
+   GistLow_1 := 5.0;
+   GistHigh_1 := 2.0;
+   TemSet_2 := 60.0;
+   GistLow_2 := 5.0;
+   GistHigh_2 := 2.0;
+   TimeDrying := 1800.0;
+   TemSet_3 := 40.0;
+   TimePurge := 600.0;
+   TemSetHigh := 90.0;
+
+END_DATA_BLOCK
+
+DATA_BLOCK "DbRegulatorsRetain"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+   VAR RETAIN
+      instMe { S7_SetPoint := 'False'} : Array[0..4] of "typeC08_UserInterfaceRetain";
+   END_VAR
+
+
+BEGIN
+   instMe[0].hysteresys.stage_1 := 2.0;
+   instMe[0].hysteresys.stage_2 := 5.0;
+   instMe[1].hysteresys.stage_1 := 2.0;
+   instMe[1].hysteresys.stage_2 := 5.0;
+   instMe[2].hysteresys.stage_1 := 2.0;
+   instMe[2].hysteresys.stage_2 := 5.0;
+   instMe[3].hysteresys.stage_1 := 2.0;
+   instMe[3].hysteresys.stage_2 := 5.0;
+   instMe[4].hysteresys.stage_1 := 2.0;
+   instMe[4].hysteresys.stage_2 := 5.0;
+
+END_DATA_BLOCK
+
+FUNCTION_BLOCK "Timer16simple"
+TITLE = Timer16simple
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      START : Bool;   // 0->1 начало счёта (1=работа)
+      NUM : Int;   // Номер таймера
+      TIM : Real;   // Время таймера
+      SAMPLE_T : Real := 0.1;   // Время скана OB
+   END_VAR
+
+   VAR_OUTPUT 
+      DONE : Bool;   // Таймер закончил счет
+      TIMING : Bool;   // Таймер считает
+   END_VAR
+
+   VAR 
+      done_arr : Array[0..15] of Bool;
+      timing_in : Array[0..15] of Real;
+   END_VAR
+
+
+BEGIN
+	IF #START THEN
+	    IF NOT #done_arr[#NUM] THEN
+	        #timing_in[#NUM] := #timing_in[#NUM] + #SAMPLE_T;
+	        #done_arr[#NUM] := (#timing_in[#NUM] > (#TIM + 0.005));//0.005 из-за ошибки счета real
+	        #TIMING := NOT #done_arr[#NUM];
+	    END_IF;
+	ELSE
+	    #done_arr[#NUM] := false;
+	    #TIMING := false;
+	    #timing_in[#NUM] := 0.0;
+	END_IF;
+	#DONE := #done_arr[#NUM];
+	;
+	
+END_FUNCTION_BLOCK
+
+DATA_BLOCK "IdbC07_Loader"
+{ DB_Accessible_From_OPC_UA := 'FALSE' ;
+ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC07_Loader"
+
+BEGIN
+
+END_DATA_BLOCK
+
+DATA_BLOCK "IdbC02_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC02_Loader"
+
+BEGIN
+
+END_DATA_BLOCK
+
+DATA_BLOCK "IdbC05_Loader"
+{ DB_Accessible_From_OPC_UA := 'FALSE' ;
+ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC05_Loader"
+
+BEGIN
+
+END_DATA_BLOCK
+
+DATA_BLOCK "DbDeviceONOF"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+   VAR RETAIN
+      boolValues { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Array[1..12] of Bool;
+   END_VAR
+
+
+BEGIN
+   boolValues[4] := TRUE;
+   boolValues[5] := TRUE;
+   boolValues[6] := TRUE;
+   boolValues[7] := TRUE;
+   boolValues[8] := TRUE;
+   boolValues[9] := TRUE;
+   boolValues[10] := TRUE;
+   boolValues[11] := TRUE;
+   boolValues[12] := TRUE;
+
+END_DATA_BLOCK
+
+DATA_BLOCK "IdbC06_Loader"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+NON_RETAIN
+"FbC06_Loader"
+
+BEGIN
+
+END_DATA_BLOCK
+
+FUNCTION_BLOCK "FbMainProg"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.1
+   VAR_INPUT 
+      StorErr : Bool;   // Стоп кнопка
+      FirerErr : Bool;   // Пожар
+      cycleTime : Real;   // Время  цикла в сек
+   END_VAR
+
+   VAR_OUTPUT 
+      hmiStatus : DWord;   // Статус 
+   END_VAR
+
+   VAR_IN_OUT 
+      hmiErrorConfirm : Word;   // Ошибки
+      hmiWarningConfirm : Word;   // Предупреждения
+      resetErrorCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Сброс аварий
+      resetWarningCode { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Сброс предупреждений
+   END_VAR
+   VAR_IN_OUT RETAIN
+      Step { ExternalWritable := 'False'} : Int;   // Шаг программы
+      StepOld : Int;   // Предыдущий шаг программы
+      TimeCurrentStep : Real;   // Время текущего шага
+      TimeRunAll : Real;   // Общее время работы программы
+   END_VAR
+   VAR_IN_OUT 
+      TimeDryingRun : Real;   // Текущее  время работы сушки
+   END_VAR
+   VAR_IN_OUT RETAIN
+      TimePurgeRun : Real;   // Текущее  время работы продувки
+      hmiControl_1 : DWord;   // Основное управление программой
+      hmiControl_2 : DWord := 16#1111;   // Биты активации
+   END_VAR
+   VAR_IN_OUT 
+      NumCycl : Int := 1;   // Количество циклов
+      TemSet_1 : Real := 0.0;   // Температура при окрашивании
+      GistLow_1 : Real := 0.0;   // Нижний гистерезис при окрашивании
+      GistHigh_1 : Real := 0.0;   // Верхний гистерезис при окрашивании
+      TemSet_2 : Real := 0.0;   // Температура при сушки
+      GistLow_2 : Real := 0.0;   // Нижний гистерезис при сушке
+      GistHigh_2 : Real := 0.0;   // Верхний гистерезис при сушке
+      TimeDryingSet : Real;   // Время сушки
+      TemSet_3 : Real := 0.0;   // Температура при продувке
+      HMIStartClor : Bool;   // Команада на старт покраски
+      HMIStartDrying : Bool;   // Команда на старт сушки
+      HMIStopProg : Bool;   // Команда на завершение
+      TimePurgSet : Real := 0.0;   // Время продувки
+      HMITime : Time_Of_Day;   // Вывод времени на панель
+      HMITimeAll : Time_Of_Day;   // Вывод общего времени на панель
+   END_VAR
+
+   VAR 
+      HMIStop { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;   // Стоп программы
+      HMINexStep : Bool;   // Следующий шаг программы
+      TimetUsed : "Timer16simple";   // Пользовательский таймер
+      EM { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+         group { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+         timerStartDelay { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Struct
+            in { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Bool;
+            setpoint { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : Time := T#4s;
+            me {InstructionName := 'TON_TIME'; LibVersion := '1.0'; ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'; S7_SetPoint := 'False'} : TON_TIME;
+         END_STRUCT;
+         state { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+         state_1 { ExternalAccessible := 'False'; ExternalVisible := 'False'; ExternalWritable := 'False'} : USInt;
+      END_STRUCT;
+   END_VAR
+
+   VAR_TEMP 
+      tempHmiResetErrorCode : Bool;
+      tempHmiResetWarningCode : Bool;
+      tempEquipmentError : Bool;   // Наличие ошибок устройств
+      tempMotorError : Bool;   // Авария какого-то привода
+      tempModeAuto : Bool;   // Готовность для автоматического режима
+      tempModeSim : Bool;   // Что-то в симуляции
+      tempError : Bool;
+      tempWarning : Bool;
+      TempTimeHolding : DInt;
+      tempHiTempErr : Bool;
+      tempWatchdogErr : Bool;
+   END_VAR
+
+   VAR CONSTANT 
+      TimeOnMotor : Int := 1;   // Время для задерки активациия двигателей в мс
+      TimeOfMotor : Int := 60;   // Время для задержки отключения двигателей 
+      EMPTY : USInt := 0;
+      M1_START_RELEASE : USInt := 1;
+      M2_START_RELEASE : USInt := 3;
+      M3_START_RELEASE : USInt := 2;
+      M4_START_RELEASE : USInt := 4;
+      DONE : USInt := 5;
+      STATE_STOPPED : USInt := 0;
+      STATE_STARTED : USInt := 1;
+      HOUR : UDInt := 3600000;
+      StepStop : Int := 0;
+      StepClor : Int := 10;
+      StepDry : Int := 30;
+      StepPurgdry : Int := 50;
+      StepPurgcol : Int := 40;
+   END_VAR
+
+
+BEGIN
+	REGION regControl
+	    
+	    IF #hmiControl_1.%X0 THEN // Стоп 
+	        #HMIStop := TRUE;
+	        #HMINexStep:= False;
+	        #HMIStartClor := #HMIStartDrying := #HMIStopProg := FALSE;
+	        
+	    ELSIF #hmiControl_1.%X1 THEN// Старт покраски
+	        IF NOT (#HMIStartDrying OR #HMIStopProg) THEN
+	            #HMIStartClor := TRUE;
+	        END_IF;
+	    
+	    ELSIF #hmiControl_1.%X2 THEN// Старт сушки
+	        IF NOT (#HMIStartClor OR #HMIStopProg) THEN
+	            #HMIStartDrying := TRUE;
+	        END_IF;
+	        
+	    ELSIF #hmiControl_1.%X3 THEN// Стоп программы
+	        IF NOT (#HMIStartDrying OR #HMIStartClor) THEN
+	            #HMIStopProg := TRUE;
+	        END_IF;
+	        
+	    ELSIF #hmiControl_1.%X4 THEN // Сброс аварии
+	        #tempHmiResetWarningCode := TRUE;
+	        #tempHmiResetErrorCode := TRUE;
+	        
+	    ELSIF #hmiControl_1.%X5 THEN // Сброс предупреждений 
+	        #tempHmiResetErrorCode := TRUE;
+	        
+	    ELSIF #hmiControl_1.%X6 THEN // Следующий шаг
+	        #HMIStop := False;
+	        #HMINexStep := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION Необходимость активации устройств
+	     // Проверка активации работы отдельный устройств в составе камеры
+	    IF #Step = 0 THEN
+	        "DbDeviceONOF".boolValues[4] := #hmiControl_2.%X3;          // M1
+	        
+	        "DbDeviceONOF".boolValues[5] := #hmiControl_2.%X4;         // M2
+	        
+	        "DbDeviceONOF".boolValues[6] := #hmiControl_2.%X5;          // M3
+	        
+	        "DbDeviceONOF".boolValues[7] := #hmiControl_2.%X6;         // M4
+	        
+	        "DbDeviceONOF".boolValues[8] := #hmiControl_2.%X7;         // GB1
+	        
+	        "DbDeviceONOF".boolValues[9] := #hmiControl_2.%X8;         // GB2
+	        
+	        "DbDeviceONOF".boolValues[10] := #hmiControl_2.%X9;        // Y1
+	        
+	        "DbDeviceONOF".boolValues[11] := #hmiControl_2.%X10;       // Y2
+	        
+	        "DbDeviceONOF".boolValues[12] := #hmiControl_2.%X11;       // Свет 
+	    END_IF;
+	END_REGION
+	    
+	REGION Анализ на отсутствие ошибок
+	    #tempEquipmentError :=
+	    "IdbC07_Loader".GB_01.error AND "DbDeviceONOF".boolValues[8] OR "IdbC07_Loader".GB_02.error AND "DbDeviceONOF".boolValues[9]
+	    OR
+	    //
+	    "IdbC08_Loader".Regul_1.error OR "IdbC08_Loader".Regul_2.error
+	    OR
+	    //
+	    "IdbC06_Loader".Y_1.error AND "DbDeviceONOF".boolValues[10] OR "IdbC06_Loader".Y_2.error AND "DbDeviceONOF".boolValues[11]
+	    OR
+	    //
+	    "IdbC03_Loader".TT7_10.error;
+	    
+	    #tempMotorError :=     
+	    "IdbC05_Loader".M_01.error AND "DbDeviceONOF".boolValues[4] OR "IdbC05_Loader".M_02.error  AND "DbDeviceONOF".boolValues[5]
+	    OR"IdbC05_Loader".M_03.error AND "DbDeviceONOF".boolValues[6] OR "IdbC05_Loader".M_04.error AND "DbDeviceONOF".boolValues[7];
+	    
+	    #tempHiTempErr := "IdbC03_Loader".TT7_10.value >= "DbU1_Recipe".TemSetHigh;
+	    
+	    #tempWatchdogErr := #TimetUsed.done_arr[4];
+	END_REGION
+	
+	REGION Проверка на готовность в автоматичском режиме
+	    #tempModeAuto :=
+	    "IdbC05_Loader".M_01.modeAuto AND "IdbC05_Loader".M_02.modeAuto AND "IdbC05_Loader".M_03.modeAuto AND "IdbC05_Loader".M_04.modeAuto
+	    AND
+	    //
+	    "IdbC07_Loader".GB_01.modeAuto AND "IdbC07_Loader".GB_02.modeAuto
+	    AND
+	    //
+	    "IdbC06_Loader".Y_1.modeAuto AND "IdbC06_Loader".Y_2.modeAuto;
+	    
+	END_REGION
+	
+	REGION Проверка на режиме 
+	    #tempModeSim:=
+	    "IdbC05_Loader".M_01.statSimulation OR "IdbC05_Loader".M_02.statSimulation  OR "IdbC05_Loader".M_03.statSimulation OR "IdbC05_Loader".M_04.statSimulation
+	    OR
+	    //
+	    "IdbC07_Loader".GB_01.statSimulation  OR "IdbC07_Loader".GB_02.statSimulation
+	    OR
+	    //
+	    "IdbC06_Loader".Y_1.statSimulation  OR "IdbC06_Loader".Y_2.statSimulation;
+	END_REGION
+	
+	REGION program errors
+	    // Ошибка оборудования
+	    IF #tempEquipmentError OR #tempMotorError THEN
+	        #hmiErrorConfirm.%X0 := TRUE;
+	    END_IF;
+	    
+	    // Нажата кнопка аварийного останова
+	    IF #StorErr THEN
+	        #hmiErrorConfirm.%X1 := TRUE;
+	    END_IF;
+	
+	    // Пожар в камере
+	    IF #FirerErr THEN
+	        #hmiErrorConfirm.%X2 := TRUE;
+	    END_IF;
+	
+	    // Высокая температура в камере
+	    IF #tempHiTempErr THEN
+	        #hmiErrorConfirm.%X3 := TRUE;
+	    END_IF;
+	    
+	    // Не достигнута температура режима
+	    IF #tempWatchdogErr THEN
+	        #hmiErrorConfirm.%X4 := TRUE;
+	    END_IF;
+	END_REGION
+	
+	REGION program warnings
+	    // Отключен нагрев
+	    #hmiWarningConfirm.%X0 := NOT "DbDeviceONOF".boolValues[8] OR NOT "DbDeviceONOF".boolValues[9];
+	    
+	    // Оборудование в ручном режиме
+	    #hmiWarningConfirm.%X1 := NOT #tempModeAuto;
+	    
+	    // Оборудование в симуляции
+	    #hmiWarningConfirm.%X2 :=  #tempModeSim;
+	    
+	    // Предупрежденеи от устройств
+	    #hmiWarningConfirm.%X3 := #tempWarning;
+	    
+	    IF #StorErr AND NOT (#Step = 91) THEN // Нажата аварийная кнопка
+	        // И аварийный останов всего
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 91;
+	        
+	    ELSIF #FirerErr AND NOT (#Step = 92) AND NOT (#Step = 91) THEN //Пожар
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 92;
+	        
+	    ELSIF #tempMotorError AND #Step > 0 AND #Step < 80 THEN // Авария электропривода
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 94;
+	        
+	    ELSIF #tempHiTempErr AND #Step > 0 AND #Step < 80 THEN // Превышению температуры в камере
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 95;
+	        
+	    ELSIF #tempEquipmentError AND #Step > 0 AND #Step < 80 THEN // Авария оборудования
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 96;
+	        
+	    ELSIF #tempWatchdogErr AND #Step > 0 AND #Step < 80 THEN // Сторожевой таймер
+	        #HMINexStep := FALSE;
+	        #HMIStartClor := FALSE;
+	        #HMIStartDrying := FALSE;
+	        #StepOld := #Step;
+	        #TimeCurrentStep := 0;
+	        #Step := 97;
+	        #TimetUsed(START := FALSE,
+	                   NUM := 4);
+	    END_IF;
+	END_REGION
+	
+	REGION Шаг
+	    //Подсчет общего времени работы
+	    IF #Step > 1 AND #Step < 90 THEN
+	        #TimeRunAll := #TimeRunAll + #cycleTime;
+	    END_IF;
+	    
+	    CASE #Step OF
+	            
+	        0:  //Остановка
+	            #HMIStopProg := FALSE; // сброс кнопки остановки программы
+	            // Сброс таймеров 
+	            #TimetUsed(START := FALSE, // Таймер второго шага
+	                       NUM := 0);
+	            #TimetUsed(START := FALSE, // Таймер поочередной активации двигаетелей
+	                       NUM := 1);
+	            #TimetUsed(START := FALSE, // Таймер задержки на отключении двигателй
+	                       NUM := 2);
+	            #TimetUsed(START := FALSE, // Таймер продувки
+	                       NUM := 3);
+	            #TimetUsed(START := FALSE, // Сторожевой таймер
+	                       NUM := 4);
+	            #TimetUsed(START := FALSE, // Резерв
+	                       NUM := 5);
+	            #EM.group := #EMPTY; // Сброс очереди на включения двигателей
+	            #TimeRunAll := #TimeDryingRun := #TimePurgeRun := 0; // Сброс таймеров процессов
+	            #TimeCurrentStep := 0;
+	            
+	            IF #HMIStartClor AND #tempModeAuto AND NOT (#tempEquipmentError OR #tempMotorError OR #tempHiTempErr) THEN // Старт покраски
+	                #StepOld := #Step;
+	                #Step := #StepClor;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStartDrying AND #tempModeAuto AND NOT (#tempEquipmentError OR #tempMotorError OR #tempHiTempErr) THEN // Старт сушки
+	                #StepOld := #Step;
+	                #Step := #StepDry;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #Step := 0;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #Step := 0;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	            END_IF;
+	
+	        10: // Запуск программы окраски
+	            // Активация и проверка положения клапанов для окраски
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF ("IdbC06_Loader".Y_1.activated OR NOT "DbDeviceONOF".boolValues[10])
+	                AND ("IdbC06_Loader".Y_2.activated OR NOT "DbDeviceONOF".boolValues[11])
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 11;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        11:  // Активация двигателей и проверка их активации
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF ("IdbC05_Loader".M_01.startedForward OR NOT "DbDeviceONOF".boolValues[4])
+	                AND ("IdbC05_Loader".M_02.startedForward OR NOT "DbDeviceONOF".boolValues[5])
+	                AND ("IdbC05_Loader".M_03.startedForward OR NOT "DbDeviceONOF".boolValues[6])
+	                AND ("IdbC05_Loader".M_04.startedForward OR NOT "DbDeviceONOF".boolValues[7])
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 12;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        12: //Нагрев до заданной температуры окраски
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            //Передача параметров регулирования и старт горелок до момента подтверждения оператором остановки
+	            "DbRegulatorsRetain".instMe[0].setpoint := "DbRegulatorsRetain".instMe[1].setpoint :=
+	            "DbU1_Recipe".TemSet_1;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_1 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_1 :=
+	            "DbU1_Recipe".GistHigh_1;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_2 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_2 :=
+	            "DbU1_Recipe".GistLow_1;
+	            
+	            #TimetUsed(START := TRUE,
+	                       NUM := 4,
+	                       TIM := 1800,
+	                       SAMPLE_T := #cycleTime);
+	            
+	            IF "DbU1_Recipe".TemSet_1 <= ("IdbC03_Loader".TT7_10.value + 1)
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 13;
+	                #TimetUsed(START := FALSE,
+	                           NUM := 4);
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        13: // Работа в режиме окраски при достижении требуемой температуры
+	         #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы  
+	                
+	         IF #HMIStop THEN // Переход на стоповый шаг
+	             #StepOld := #Step;
+	             #TimeCurrentStep := 0;
+	             #Step := 80;
+	             
+	         ELSIF #HMIStopProg THEN // Переход на окрасочную продувку
+	             #StepOld := #Step;
+	             #TimeCurrentStep := 0;
+	             #Step := 40;
+	             
+	         ELSIF #HMIStartDrying THEN // Переход на Сушку по кнопке
+	             #StepOld := #Step;
+	             #TimeCurrentStep := 0;
+	             #Step := 30;
+	         END_IF;
+	            
+	        30:  // Активация  сушки
+	            //Y1-2 закрываются
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы  
+	            
+	            IF ("IdbC06_Loader".Y_1.deactivated OR NOT "DbDeviceONOF".boolValues[10])
+	                AND ("IdbC06_Loader".Y_2.deactivated OR NOT "DbDeviceONOF".boolValues[11])
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 32;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на сушильную продувку
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 50;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        32: //Сушка: Останов вытяжных вентиляторов, приточные продолжают свою работу
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы  
+	            
+	            IF ("IdbC05_Loader".M_01.startedForward OR NOT "DbDeviceONOF".boolValues[4])
+	                AND ("IdbC05_Loader".M_02.startedForward OR NOT "DbDeviceONOF".boolValues[5])
+	                AND (NOT "IdbC05_Loader".M_03.startedForward OR NOT "DbDeviceONOF".boolValues[6])
+	                AND (NOT "IdbC05_Loader".M_04.startedForward OR NOT "DbDeviceONOF".boolValues[7])
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 34;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на сушильную продувку
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 50;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        34: //Сушка. Выход на заданную температуру 
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            //Передача параметров регулирования и старт горелок до момента подтверждения оператором остановки
+	            "DbRegulatorsRetain".instMe[0].setpoint := "DbRegulatorsRetain".instMe[1].setpoint :=
+	            "DbU1_Recipe".TemSet_2;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_1 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_1 :=
+	            "DbU1_Recipe".GistHigh_2;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_2 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_2 :=
+	            "DbU1_Recipe".GistLow_2;
+	            
+	            #TimetUsed(START := TRUE,
+	                       NUM := 4,
+	                       TIM := 1800,
+	                       SAMPLE_T := #cycleTime);
+	            
+	            IF (#TemSet_2 - 2) <= ("IdbC03_Loader".TT7_10.value) OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 35;
+	                #TimetUsed(START := FALSE,
+	                           NUM := 4);
+	                
+	            ELSIF #HMIStopProg THEN // Переход на сушильную продувку
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 50;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        35: //Сушка. Отсчет заданного времени 
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            #TimeDryingRun := #TimeDryingRun + #cycleTime;
+	            
+	            IF #TimeDryingRun > #TimeDryingSet OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 50;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на сушильную продувку по кнопке
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 50;
+	                
+	          //  ELSIF #HMIStartClor THEN // Переход на Покраску по кнопке
+	          //     #StepOld := #Step;
+	          //      #TimeCurrentStep := 0;
+	          //      #Step := 10;
+	            END_IF;
+	            
+	        40: //Окрасочная продувка 
+	            //Жалюзи Y1-2 открыты, приточный и вытяжные вентиляторы запущены, горелки работают.
+	            //Условиями отключения режима являются: падение температуры до заданной в рецепте (условно +20)
+	            //При выполнении условия продувка работает ещё около 3 минут и отключается.
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            // Активация  и проверка положения клапанов  как для покраски
+	            IF ("IdbC06_Loader".Y_1.activated OR NOT "DbDeviceONOF".boolValues[10])
+	                AND ("IdbC06_Loader".Y_2.activated OR NOT "DbDeviceONOF".boolValues[11])
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 41;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        41: // Окрасочная продувка: Активация приточных и вытяжных вентиляторов
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF (("IdbC05_Loader".M_01.startedForward OR NOT "DbDeviceONOF".boolValues[4])
+	                AND ("IdbC05_Loader".M_02.startedForward OR NOT "DbDeviceONOF".boolValues[5])
+	                AND ("IdbC05_Loader".M_03.startedForward OR NOT "DbDeviceONOF".boolValues[6])
+	                AND ("IdbC05_Loader".M_04.startedForward OR NOT "DbDeviceONOF".boolValues[7]))
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 42;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        42: //Окрасочная продувка : Охлаждение до заданной температуры
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            #TimePurgeRun := #TimePurgeRun + #cycleTime;
+	            
+	            // Подсчет времени продувки и проверка температуры
+	            // При достижение темературы до уставки, а так же при превышении максимального времени переход
+	            IF #TimetUsed.done_arr[3] OR #TimePurgeRun >= #TimePurgSet
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF "DbU1_Recipe".TemSet_3 + 2 >= "IdbC03_Loader".TT7_10.value THEN
+	                #TimetUsed(START := TRUE,
+	                           NUM := 3,
+	                           TIM := 180,
+	                           SAMPLE_T := #cycleTime);
+	            END_IF;
+	            
+	        50:  // Сушильная продувка
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            // Активация и проверка положения клапанов как для сушки
+	            IF "IdbC06_Loader".Y_1.deactivated AND "IdbC06_Loader".Y_2.deactivated
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 52;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	            
+	        52: //Сушильная продувка. Ожидание снижения температуры.
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы
+	            #TimePurgeRun := #TimePurgeRun + #cycleTime;
+	            
+	            IF #TimetUsed.done_arr[3] OR #TimePurgeRun >= #TimePurgSet
+	                OR #HMINexStep THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #HMIStop := 0;
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF "DbU1_Recipe".TemSet_3 + 2 >= "IdbC03_Loader".TT7_10.value THEN
+	                #TimetUsed(START := TRUE,
+	                           NUM := 3,
+	                           TIM := 180,
+	                           SAMPLE_T := #cycleTime);
+	            END_IF;
+	            
+	        80: // Штатная остановка ожидание завершение работы двигателей
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            // Сброс параметров регулятора
+	            "DbRegulatorsRetain".instMe[0].setpoint := "DbRegulatorsRetain".instMe[1].setpoint := 0.0;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_1 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_1 := 0.0;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_2 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_2 := 0.0;
+	            
+	            //Проверка положения задвижек на соответствие завершающему шагу
+	            IF NOT "IdbC06_Loader".Y_1.activated AND NOT "IdbC06_Loader".Y_2.activated
+	                OR #HMINexStep THEN
+	                #HMIStopProg := FALSE;
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 81;
+	            END_IF;
+	            
+	        81: // Штатная остановка ожидание завершение работы двигателей
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF #TimeCurrentStep > 1
+	                OR #HMINexStep THEN
+	                #HMIStop := FALSE;
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 0;
+	                #TimeCurrentStep := 0;
+	            END_IF;
+	            
+	        91: // Авария. Нажата аварийная кнопка
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND   NOT #StorErr THEN
+	                #StepOld := #Step;
+	                #Step := 80;
+	                #TimeCurrentStep := 0;
+	            END_IF;
+	            
+	        92: // Авария. Пожар
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы  
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND NOT #FirerErr THEN
+	                #StepOld := #Step;
+	                #Step := 80;
+	                #TimeCurrentStep := 0;
+	            END_IF;
+	
+	        94: // Авария. Электропривода вентиляторов
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы  
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND NOT #tempMotorError THEN
+	                #StepOld := #Step;
+	                #Step := 80;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #TimetUsed.done_arr[3] OR #TimePurgeRun >= #TimePurgSet THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF "DbU1_Recipe".TemSet_3 + 2 >= "IdbC03_Loader".TT7_10.value THEN
+	                #TimetUsed(START := TRUE,
+	                           NUM := 3,
+	                           TIM := 180,
+	                           SAMPLE_T := #cycleTime);
+	            END_IF;
+	            
+	        95: // Авария. Высокая температура в камере.
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы 
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND NOT #tempHiTempErr THEN
+	                #StepOld := #Step;
+	                #Step := 80;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #TimetUsed.done_arr[3] OR #TimePurgeRun >= #TimePurgSet THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF "DbU1_Recipe".TemSet_3 + 2 >= "IdbC03_Loader".TT7_10.value THEN
+	                #TimetUsed(START := TRUE,
+	                           NUM := 3,
+	                           TIM := 180,
+	                           SAMPLE_T := #cycleTime);
+	            END_IF;
+	                
+	        96: // Авария. Авария оборудования.
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы
+	            
+	            // Сброс параметров регулятора
+	            "DbRegulatorsRetain".instMe[0].setpoint := "DbRegulatorsRetain".instMe[1].setpoint := 0.0;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_1 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_1 := 0.0;
+	            
+	            "DbRegulatorsRetain".instMe[0].hysteresys.stage_2 := "DbRegulatorsRetain".instMe[1].hysteresys.stage_2 := 0.0;
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND NOT #tempEquipmentError THEN
+	                #StepOld := #Step;
+	                #Step := 80;
+	                #TimeCurrentStep := 0;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #TimetUsed.done_arr[3] OR #TimePurgeRun >= #TimePurgSet THEN
+	                #HMINexStep := FALSE;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF "DbU1_Recipe".TemSet_3 + 2 >= "IdbC03_Loader".TT7_10.value THEN
+	                #TimetUsed(START := TRUE,
+	                           NUM := 3,
+	                           TIM := 180,
+	                           SAMPLE_T := #cycleTime);
+	            END_IF;
+	            
+	        97: // Авария. Сторожевой таймер.
+	            #TimeCurrentStep := #TimeCurrentStep + #cycleTime; //Подсчет времени текущей программы
+	            
+	            IF #resetErrorCode  // Если нет этой аварии и нажата кнопка сброс, переходим на начальный шаг
+	                AND NOT #tempWatchdogErr THEN
+	                #TimeCurrentStep := 0;
+	                #StepOld := #Step;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStopProg THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	                
+	            ELSIF #HMIStop THEN // Переход на стоповый шаг
+	                #StepOld := #Step;
+	                #TimeCurrentStep := 0;
+	                #Step := 80;
+	            END_IF;
+	    END_CASE;
+	END_REGION
+	
+	REGION Активация устройств
+	
+	    CASE #Step OF
+	            
+	        10, 40: // Активация начального положения задвижек. Для программы окраски
+	                // задвижки Y1-2 открыты
+	            IF "DbDeviceONOF".boolValues[10] THEN
+	                    "IdbC06_Loader".Y_1.autoDeactivate := FALSE;
+	                    "IdbC06_Loader".Y_1.autoActivate := TRUE;
+	                END_IF;
+	                IF "DbDeviceONOF".boolValues[11] THEN
+	                    "IdbC06_Loader".Y_2.autoDeactivate := FALSE;
+	                    "IdbC06_Loader".Y_2.autoActivate := TRUE;
+	                END_IF;
+	            
+	            11, 41: //Поочередная активация двигателей для покраски
+	                //Поочередная активация двигателей 
+	            CASE #EM.group OF
+	                #EMPTY:
+	                    #EM.group := #M1_START_RELEASE;
+	                    IF #TimetUsed.done_arr[1] THEN
+	                        #TimetUsed(START := TRUE,
+	                                   NUM := 1,
+	                                   TIM := #TimeOnMotor,
+	                                   SAMPLE_T := #cycleTime);
+	                    END_IF;
+	                    
+	                    //Активация востребованности двигателей через задержку по времени               
+	                #M1_START_RELEASE:
+	                    #TimetUsed(START := TRUE,
+	                               NUM := 1,
+	                               TIM := #TimeOnMotor,
+	                               SAMPLE_T := #cycleTime);
+	                    IF #TimetUsed.done_arr[1] THEN
+	                        #EM.group := #M3_START_RELEASE;
+	                        #TimetUsed(START := FALSE,
+	                                   NUM := 1);
+	                    END_IF;
+	                    
+	                #M3_START_RELEASE:
+	                    #TimetUsed(START := TRUE,
+	                               NUM := 1,
+	                               TIM := #TimeOnMotor,
+	                               SAMPLE_T := #cycleTime);
+	                    IF #TimetUsed.done_arr[1] THEN
+	                        #EM.group := #M2_START_RELEASE;
+	                        #TimetUsed(START := FALSE,
+	                                   NUM := 1);
+	                    END_IF;
+	                    
+	                #M2_START_RELEASE:
+	                    #TimetUsed(START := TRUE,
+	                               NUM := 1,
+	                               TIM := #TimeOnMotor,
+	                               SAMPLE_T := #cycleTime);
+	                    IF #TimetUsed.done_arr[1] THEN
+	                        #EM.group := #M4_START_RELEASE;
+	                        #TimetUsed(START := FALSE,
+	                                   NUM := 1);
+	                    END_IF;
+	                
+	                #M4_START_RELEASE:
+	                    #EM.group := #DONE;
+	                    
+	                #DONE:
+	                    #TimetUsed(START := TRUE,
+	                               NUM := 1,
+	                               TIM := #TimeOnMotor,
+	                               SAMPLE_T := #cycleTime);
+	                    IF #TimetUsed.done_arr[1] THEN
+	                        #TimetUsed(START := FALSE,
+	                                   NUM := 1);
+	                        #EM.group := #EMPTY;
+	                    END_IF;
+	                ELSE
+	                    #EM.group := #EMPTY;
+	                    #TimetUsed(START := FALSE,
+	                               NUM := 1);
+	            END_CASE;
+	            
+	            // Непосредственное включение двигателей при их востребованности и разрешение (активен бит их участия в работе HMI)   
+	            IF ("DbDeviceONOF".boolValues[4] AND ((#EM.group >= #M1_START_RELEASE))) THEN
+	                "IdbC05_Loader".M_01.autoStartForward := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[5] AND (#EM.group >= #M2_START_RELEASE) THEN
+	                "IdbC05_Loader".M_02.autoStartForward := TRUE;
+	            END_IF;
+	            IF ("DbDeviceONOF".boolValues[6] AND (#EM.group >= #M3_START_RELEASE)) THEN
+	                "IdbC05_Loader".M_03.autoStartForward := TRUE;
+	            END_IF;
+	            IF ("DbDeviceONOF".boolValues[7] AND (#EM.group >= #M4_START_RELEASE)) THEN
+	                "IdbC05_Loader".M_04.autoStartForward := TRUE;
+	            END_IF;
+	            
+	        12: //Непосредственное включение двигателей и горелок для покраски.
+	            //Активация горелок
+	            IF "DbDeviceONOF".boolValues[8] THEN
+	                "IdbC08_Loader".Regul_1.release := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[9] THEN
+	                "IdbC08_Loader".Regul_2.release := TRUE;
+	            END_IF;
+	            
+	        30: //Переключение клапанов в режим сушки Y1-2 закрываются
+	            //Активация горелок в случае деактивации. Двигатели продолжают работы до перехода на следующий шаг
+	            //Деактивация горелок
+	            IF "DbDeviceONOF".boolValues[8] THEN
+	                "IdbC08_Loader".Regul_1.release := FALSE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[9] THEN
+	                "IdbC08_Loader".Regul_2.release := FALSE;
+	            END_IF;
+	            
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            
+	            //Переключение клапанов в режим сушки
+	            IF "DbDeviceONOF".boolValues[10] THEN
+	                "IdbC06_Loader".Y_1.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_1.autoDeactivate := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[11] THEN
+	                "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            END_IF;
+	            
+	        32:  // Поочередное включение двигателей
+	                CASE #EM.group OF
+	                    #EMPTY:
+	                        #EM.group := #M1_START_RELEASE;
+	                        IF #TimetUsed.done_arr[1] THEN
+	                            #TimetUsed(START := TRUE,
+	                                       NUM := 1,
+	                                       TIM := #TimeOnMotor,
+	                                       SAMPLE_T := #cycleTime);
+	                        END_IF;
+	                        
+	                        //Активация востребованности двигателей через задержку по времени
+	                    #M1_START_RELEASE:
+	                        #TimetUsed(START := TRUE,
+	                                   NUM := 1,
+	                                   TIM := #TimeOnMotor,
+	                                   SAMPLE_T := #cycleTime);
+	                        IF #TimetUsed.done_arr[1] THEN
+	                            #EM.group := #M2_START_RELEASE;
+	                            #TimetUsed(START := FALSE,
+	                                       NUM := 1);
+	                        END_IF;
+	                    
+	                    #M2_START_RELEASE:
+	                        #EM.group := #DONE;
+	                        
+	                    #DONE:
+	                        #TimetUsed(START := TRUE,
+	                                   NUM := 1,
+	                                   TIM := #TimeOnMotor,
+	                                   SAMPLE_T := #cycleTime);
+	                        IF #TimetUsed.done_arr[1] THEN
+	                            #EM.group := #EMPTY;
+	                            #TimetUsed(START := FALSE,
+	                                       NUM := 1); 
+	                        END_IF;
+	                    ELSE
+	                        #EM.group := #EMPTY;
+	                        #TimetUsed(START := FALSE,
+	                                   NUM := 1);
+	                END_CASE;
+	    
+	                // Непосредственное включение двигателей при их востребованности и разрешение (активен бит их участия в работе HMI)   
+	                IF ("DbDeviceONOF".boolValues[4] AND ((#EM.group >= #M1_START_RELEASE))) THEN
+	                    "IdbC05_Loader".M_01.autoStartForward := TRUE;
+	                END_IF;
+	                IF "DbDeviceONOF".boolValues[5] AND (#EM.group >= #M2_START_RELEASE) THEN
+	                    "IdbC05_Loader".M_02.autoStartForward := TRUE;
+	                END_IF;
+	                IF "DbDeviceONOF".boolValues[6] THEN
+	                    "IdbC05_Loader".M_03.autoStartForward := FALSE;
+	                END_IF;
+	                IF "DbDeviceONOF".boolValues[7] THEN
+	                    "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	                END_IF;
+	            
+	        34: // Активация горелок
+	            IF "DbDeviceONOF".boolValues[8] THEN
+	                "IdbC08_Loader".Regul_1.release := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[9] THEN
+	                "IdbC08_Loader".Regul_2.release := TRUE;
+	            END_IF;
+	            
+	        42: //Окрасочная продувка. Ожидание достижения уставок по времени или температуре
+	            //Деактивация горелок
+	            IF "DbDeviceONOF".boolValues[8] THEN
+	                "IdbC08_Loader".Regul_1.release := FALSE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[9] THEN
+	                "IdbC08_Loader".Regul_2.release := FALSE;
+	            END_IF;
+	            
+	        50: //Сушильная продувка
+	            //Клапаны в режиме сушки, остаются в предыдущем положении
+	            IF "DbDeviceONOF".boolValues[10] THEN
+	                "IdbC06_Loader".Y_1.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_1.autoDeactivate := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[11] THEN
+	                "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            END_IF;
+	            
+	        52: //Сушильная продувка
+	            // Приточне двигатели продолжают работу, вытяжные деактивированы. 
+	            IF ("DbDeviceONOF".boolValues[4]) THEN
+	                "IdbC05_Loader".M_01.autoStartForward := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[5] THEN
+	                "IdbC05_Loader".M_02.autoStartForward := TRUE;
+	            END_IF;
+	            IF ("DbDeviceONOF".boolValues[6]) THEN
+	                "IdbC05_Loader".M_03.autoStartForward := FALSE;
+	            END_IF;
+	            IF ("DbDeviceONOF".boolValues[7]) THEN
+	                "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            END_IF;
+	            
+	            // Деактивация регулирования горелок 
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	            
+	        80:  //Переключенеи задвижек в первоначальное положение, дективация остального
+	            // задвижек жалюзи Y1-2 закрыты
+	            IF "DbDeviceONOF".boolValues[10] THEN
+	                "IdbC06_Loader".Y_1.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_1.autoDeactivate := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[11] THEN
+	                "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            END_IF;
+	            
+	            // Деактивация горелок   
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	
+	        81: // Деактивация всего
+	            //Переключение камер задвижек 1-2
+	            "IdbC06_Loader".Y_1.autoActivate := "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	            "IdbC06_Loader".Y_1.autoDeactivate := "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	           
+	            // Деактивация горелок   
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	           
+	        91: //Нажата аварийная кнопка. Все отключить
+	            // Аварийный останов активируетя до перехода на шаг
+	            //Отключение в авто режиме
+	            //Отключение   задвижек 1-2
+	            "IdbC06_Loader".Y_1.autoActivate := "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	            "IdbC06_Loader".Y_1.autoDeactivate := "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            
+	            // Деактивация горелок   
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            
+	        92: // Сигнал о пожаре. Y1-2 закрываются, свет горит на протяжении 30 секунд и отключается.
+	            // Аварийный останов активируетя до перехода на шаг
+	            //Отключение в авто режиме
+	
+	            //Переключение клапанов в режим сушки
+	            IF "DbDeviceONOF".boolValues[10] THEN
+	                "IdbC06_Loader".Y_1.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_1.autoDeactivate := TRUE;
+	            END_IF;
+	            IF "DbDeviceONOF".boolValues[11] THEN
+	                "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	                "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            END_IF;
+	            
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            
+	        94: // Авария привода вентилятора
+	            //Запускается режим продувки. Тип продувки зависит от того на какой из программ это произошло.
+	            // Задвижки остаются в предыдущем положении 
+	            
+	            //Горелки останавливаются
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Активируются только приточка Если какой-то в аварии он и так не запустится
+	            IF (#StepOld >= 30 AND #StepOld < 40) OR (#StepOld >= 50 AND #StepOld < 60) THEN // Если пред шаг связан с сушкой, то запускается сушильная продувка
+	                "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := TRUE;
+	                "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            ELSE // Иначе запускается продувка с работой всех двигателей
+	                "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := TRUE;
+	            END_IF;
+	            
+	        95, 96: // Авария  оборудования или Высокая температура в камере.
+	            //Запускается режим продувки. Тип продувки зависит от того на какой из программ это произошло.
+	            // Задвижки остаются в предыдущем положении 
+	            //Горелки останавливаются
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	
+	            // Активируются все двигатели. Если какой-то в аварии он и так не запустится
+	            IF (#StepOld >= 30 AND #StepOld < 40) OR (#StepOld >= 50 AND #StepOld < 60) THEN // Если пред шаг связан с сушкой, то запускается сушильная продувка
+	                "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := TRUE;
+	                "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	            ELSE // Иначе запускается продувка с работой всех двигателей
+	                "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := TRUE;
+	            END_IF;
+	            
+	        97: //Активирован сторожевой таймер. Все отключить
+	            "IdbC06_Loader".Y_1.autoActivate := "IdbC06_Loader".Y_2.autoActivate := FALSE;
+	            "IdbC06_Loader".Y_1.autoDeactivate := "IdbC06_Loader".Y_2.autoDeactivate := TRUE;
+	            
+	            // Деактивация горелок   
+	            "IdbC08_Loader".Regul_1.release := FALSE;
+	            "IdbC08_Loader".Regul_2.release := FALSE;
+	            
+	            // Деактивация двигателей
+	            "IdbC05_Loader".M_01.autoStartForward := "IdbC05_Loader".M_02.autoStartForward := "IdbC05_Loader".M_03.autoStartForward := "IdbC05_Loader".M_04.autoStartForward := FALSE;
+	    END_CASE;
+	END_REGION
+	  
+	REGION Активация освещения
+	    //Активация свет 1 во время работы
+	    IF ((#Step >  0 AND #Step <= 13)  // Работа во время основной программы
+	        OR (#Step = 92 AND #TimeCurrentStep <30)//Работа во время аварии по пожару
+	        OR ("HL_01_ManOn" AND NOT #StorErr))
+	        AND "DbDeviceONOF".boolValues[12] THEN// Свет
+	        "IdbC02_Loader".HL_01.release := TRUE;
+	    ELSE
+	        "IdbC02_Loader".HL_01.release  := FALSE;
+	    END_IF;
+	END_REGION
+	
+	REGION Сброс  
+	    #HMITime := UDINT_TO_TOD(REAL_TO_UDINT(#TimeCurrentStep * 1000.0));
+	    #HMITimeAll := UDINT_TO_TOD(REAL_TO_UDINT(#TimeRunAll * 1000.0));
+	    
+	    #tempError := #hmiErrorConfirm <> w#16#0;
+	    #tempWarning := #hmiWarningConfirm <> w#16#0;
+	
+	    #hmiControl_1 := w#16#0; //Сброс контрольного слова
+	    
+	    IF #tempHmiResetErrorCode THEN // Сброс аварий
+	        #hmiErrorConfirm := w#16#0;
+	        #tempHmiResetErrorCode := FALSE;
+	        #resetErrorCode := TRUE;
+	    ELSE
+	        #resetErrorCode := FALSE ;
+	    END_IF;
+	   
+	    IF #tempHmiResetWarningCode THEN // Сброс предупреждений
+	        #hmiWarningConfirm := w#16#0;
+	        #tempHmiResetWarningCode := FALSE;
+	    END_IF;
+	    
+	    // Сброс нажатий с панели
+	    #HMIStop := False;
+	    #HMINexStep := False;
+	    #HMIStartClor := FALSE;
+	    #HMIStartDrying := FALSE;
+	    #HMIStopProg := FALSE;
+	END_REGION
+END_FUNCTION_BLOCK
+
